@@ -1,26 +1,30 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-22T04:39:25Z",
+  "updatedAt": "2026-05-22T04:43:11Z",
   "students": {
     "ceilf6": {
-      "activeIssue": 11,
-      "completedIssues": [],
+      "activeIssue": null,
+      "completedIssues": [
+        11
+      ],
       "reviewedIssues": [],
       "bugPenalties": [],
-      "developmentScore": 0,
+      "developmentScore": 0.75,
       "reviewScore": 0,
       "penaltyScore": 0,
-      "totalScore": 0
+      "totalScore": 0.75
     },
     "MINTPIPERAS": {
       "activeIssue": 9,
       "completedIssues": [],
-      "reviewedIssues": [],
+      "reviewedIssues": [
+        11
+      ],
       "bugPenalties": [],
       "developmentScore": 0,
-      "reviewScore": 0,
+      "reviewScore": 0.25,
       "penaltyScore": 0,
-      "totalScore": 0
+      "totalScore": 0.25
     },
     "Suxian2001": {
       "activeIssue": 5,
@@ -67,12 +71,25 @@
       "stack": [
         "research"
       ],
-      "status": "claimed",
+      "status": "closed",
       "assignee": "ceilf6",
       "claimedAt": "2026-05-22T03:41:28Z",
-      "closedAt": null,
-      "mergedPr": null
+      "closedAt": "2026-05-22T04:43:11Z",
+      "mergedPr": 12
     }
   },
-  "ledger": []
+  "ledger": [
+    {
+      "id": "pr-12-merge",
+      "type": "feature_merge",
+      "issue": 11,
+      "pr": 12,
+      "score": 1,
+      "developer": "ceilf6",
+      "reviewer": "MINTPIPERAS",
+      "developerDelta": 0.75,
+      "reviewerDelta": 0.25,
+      "createdAt": "2026-05-22T04:43:11Z"
+    }
+  ]
 }
