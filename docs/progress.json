@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-22T08:21:58Z",
+  "updatedAt": "2026-05-22T08:42:30Z",
   "students": {
     "ceilf6": {
       "activeIssue": null,
@@ -52,6 +52,16 @@
       "reviewScore": 0.25,
       "penaltyScore": 0,
       "totalScore": 1
+    },
+    "JunMang01": {
+      "activeIssue": 6,
+      "completedIssues": [],
+      "reviewedIssues": [],
+      "bugPenalties": [],
+      "developmentScore": 0,
+      "reviewScore": 0,
+      "penaltyScore": 0,
+      "totalScore": 0
     }
   },
   "issues": {
@@ -71,6 +81,19 @@
       "status": "claimed",
       "assignee": "Suxian2001",
       "claimedAt": "2026-05-22T04:39:25Z",
+      "closedAt": null,
+      "mergedPr": null
+    },
+    "6": {
+      "number": 6,
+      "title": "[调研] CoderPad 协作 IDE 与面试回放",
+      "score": 1,
+      "stack": [
+        "research"
+      ],
+      "status": "claimed",
+      "assignee": "JunMang01",
+      "claimedAt": "2026-05-22T08:42:30Z",
       "closedAt": null,
       "mergedPr": null
     },
