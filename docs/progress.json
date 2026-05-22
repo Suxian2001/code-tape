@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-22T09:42:30Z",
+  "updatedAt": "2026-05-22T10:53:42Z",
   "students": {
     "ceilf6": {
       "activeIssue": null,
@@ -12,13 +12,14 @@
       "reviewedIssues": [
         4,
         9,
-        5
+        5,
+        7
       ],
       "bugPenalties": [],
       "developmentScore": 2.25,
-      "reviewScore": 0.75,
+      "reviewScore": 1,
       "penaltyScore": 0,
-      "totalScore": 3
+      "totalScore": 3.25
     },
     "MINTPIPERAS": {
       "activeIssue": null,
@@ -48,18 +49,19 @@
       "totalScore": 0.75
     },
     "yangchloeeeee": {
-      "activeIssue": 7,
+      "activeIssue": null,
       "completedIssues": [
-        4
+        4,
+        7
       ],
       "reviewedIssues": [
         10
       ],
       "bugPenalties": [],
-      "developmentScore": 0.75,
+      "developmentScore": 1.5,
       "reviewScore": 0.25,
       "penaltyScore": 0,
-      "totalScore": 1
+      "totalScore": 1.75
     },
     "JunMang01": {
       "activeIssue": 6,
@@ -112,11 +114,11 @@
       "stack": [
         "research"
       ],
-      "status": "claimed",
+      "status": "closed",
       "assignee": "yangchloeeeee",
       "claimedAt": "2026-05-22T07:58:32Z",
-      "closedAt": null,
-      "mergedPr": null
+      "closedAt": "2026-05-22T10:53:42Z",
+      "mergedPr": 18
     },
     "8": {
       "number": 8,
@@ -243,6 +245,18 @@
       "developerDelta": 0.75,
       "reviewerDelta": 0.25,
       "createdAt": "2026-05-22T09:42:30Z"
+    },
+    {
+      "id": "pr-18-merge",
+      "type": "feature_merge",
+      "issue": 7,
+      "pr": 18,
+      "score": 1,
+      "developer": "yangchloeeeee",
+      "reviewer": "ceilf6",
+      "developerDelta": 0.75,
+      "reviewerDelta": 0.25,
+      "createdAt": "2026-05-22T10:53:42Z"
     }
   ]
 }
