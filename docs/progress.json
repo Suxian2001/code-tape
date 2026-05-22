@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-22T04:18:07Z",
+  "updatedAt": "2026-05-22T04:39:25Z",
   "students": {
     "ceilf6": {
       "activeIssue": 11,
@@ -21,9 +21,32 @@
       "reviewScore": 0,
       "penaltyScore": 0,
       "totalScore": 0
+    },
+    "Suxian2001": {
+      "activeIssue": 5,
+      "completedIssues": [],
+      "reviewedIssues": [],
+      "bugPenalties": [],
+      "developmentScore": 0,
+      "reviewScore": 0,
+      "penaltyScore": 0,
+      "totalScore": 0
     }
   },
   "issues": {
+    "5": {
+      "number": 5,
+      "title": "[调研] Codecast 与 RecDev 代码录制回放模式",
+      "score": 1,
+      "stack": [
+        "research"
+      ],
+      "status": "claimed",
+      "assignee": "Suxian2001",
+      "claimedAt": "2026-05-22T04:39:25Z",
+      "closedAt": null,
+      "mergedPr": null
+    },
     "9": {
       "number": 9,
       "title": "[调研] CodeSandbox 在线 IDE 与项目分享",
