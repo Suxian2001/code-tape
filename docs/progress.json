@@ -1,18 +1,20 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-22T04:43:11Z",
+  "updatedAt": "2026-05-22T06:57:05Z",
   "students": {
     "ceilf6": {
       "activeIssue": null,
       "completedIssues": [
         11
       ],
-      "reviewedIssues": [],
+      "reviewedIssues": [
+        4
+      ],
       "bugPenalties": [],
       "developmentScore": 0.75,
-      "reviewScore": 0,
+      "reviewScore": 0.25,
       "penaltyScore": 0,
-      "totalScore": 0.75
+      "totalScore": 1
     },
     "MINTPIPERAS": {
       "activeIssue": 9,
@@ -35,9 +37,27 @@
       "reviewScore": 0,
       "penaltyScore": 0,
       "totalScore": 0
+    },
+    "yangchloeeeee": {
+      "activeIssue": null,
+      "completedIssues": [
+        4
+      ],
+      "reviewedIssues": [],
+      "bugPenalties": [],
+      "developmentScore": 0.75,
+      "reviewScore": 0,
+      "penaltyScore": 0,
+      "totalScore": 0.75
     }
   },
   "issues": {
+    "4": {
+      "number": 4,
+      "status": "closed",
+      "closedAt": "2026-05-22T06:57:05Z",
+      "mergedPr": 13
+    },
     "5": {
       "number": 5,
       "title": "[调研] Codecast 与 RecDev 代码录制回放模式",
@@ -90,6 +110,18 @@
       "developerDelta": 0.75,
       "reviewerDelta": 0.25,
       "createdAt": "2026-05-22T04:43:11Z"
+    },
+    {
+      "id": "pr-13-merge",
+      "type": "feature_merge",
+      "issue": 4,
+      "pr": 13,
+      "score": 1,
+      "developer": "yangchloeeeee",
+      "reviewer": "ceilf6",
+      "developerDelta": 0.75,
+      "reviewerDelta": 0.25,
+      "createdAt": "2026-05-22T06:57:05Z"
     }
   ]
 }
