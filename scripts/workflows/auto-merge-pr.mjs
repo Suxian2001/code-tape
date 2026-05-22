@@ -1,6 +1,7 @@
 import { loadPrGuardContext } from './action-context.mjs';
 import { evaluatePrGuard } from './guard-pr.mjs';
 import { GitHubClient, readEvent } from './github-client.mjs';
+import { shouldWaitForMergeableState } from './mergeable-state.mjs';
 
 const event = await readEvent();
 if (event.workflow_run && event.workflow_run.conclusion !== 'success') {
@@ -34,7 +35,7 @@ if (context.rawPull.draft) {
   process.exit(0);
 }
 
-if (context.rawPull.mergeable_state && context.rawPull.mergeable_state !== 'clean') {
+if (shouldWaitForMergeableState(context.rawPull.mergeable_state)) {
   console.log(`PR #${context.pr.number} mergeable_state is ${context.rawPull.mergeable_state}; waiting for branch protection and checks`);
   process.exit(0);
 }

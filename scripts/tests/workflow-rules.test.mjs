@@ -11,6 +11,7 @@ import {
   findValidReviewer,
   parseClosingIssues,
 } from '../workflows/pr-parser.mjs';
+import { shouldWaitForMergeableState } from '../workflows/mergeable-state.mjs';
 import { pullNumberFromEvent } from '../workflows/action-context.mjs';
 import {
   applyBugFixMerge,
@@ -322,4 +323,13 @@ test('pullNumberFromEvent supports workflow_run retry events', () => {
     }),
     34,
   );
+});
+
+test('auto merge waits only for truly blocked mergeable states', () => {
+  assert.equal(shouldWaitForMergeableState('clean'), false);
+  assert.equal(shouldWaitForMergeableState('unstable'), false);
+  assert.equal(shouldWaitForMergeableState(null), false);
+  assert.equal(shouldWaitForMergeableState('dirty'), true);
+  assert.equal(shouldWaitForMergeableState('blocked'), true);
+  assert.equal(shouldWaitForMergeableState('unknown'), true);
 });
