@@ -91,6 +91,8 @@ gh issue list --limit 50 --state all --json number,title,state,assignees,labels
 #### 报告模板
 
 ```
+<at id="all"></at>
+
 # code-tape 进展
 更新时间：{北京时间}
 
@@ -118,6 +120,7 @@ gh issue list --limit 50 --state all --json number,title,state,assignees,labels
 格式要求：
 - 不使用 emoji 图标
 - 各段落之间空一行分隔
+- 消息开头用 `<at id="all"></at>` 全员提醒（飞书富文本 at 语法），与正文之间空一行
 - 时间转换为北京时间（+8），格式 `MM-DD HH:mm`
 - 分数只在非零时显示，总分为 0 时可省略该行或只显示姓名
 - 没有当前任务时显示"暂无"
