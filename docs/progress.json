@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-22T10:53:42Z",
+  "updatedAt": "2026-05-22T14:28:52Z",
   "students": {
     "ceilf6": {
       "activeIssue": null,
@@ -28,13 +28,14 @@
       ],
       "reviewedIssues": [
         11,
-        8
+        8,
+        6
       ],
       "bugPenalties": [],
       "developmentScore": 0.75,
-      "reviewScore": 0.5,
+      "reviewScore": 0.75,
       "penaltyScore": 0,
-      "totalScore": 1.25
+      "totalScore": 1.5
     },
     "Suxian2001": {
       "activeIssue": null,
@@ -64,14 +65,16 @@
       "totalScore": 1.75
     },
     "JunMang01": {
-      "activeIssue": 6,
-      "completedIssues": [],
+      "activeIssue": null,
+      "completedIssues": [
+        6
+      ],
       "reviewedIssues": [],
       "bugPenalties": [],
-      "developmentScore": 0,
+      "developmentScore": 0.75,
       "reviewScore": 0,
       "penaltyScore": 0,
-      "totalScore": 0
+      "totalScore": 0.75
     }
   },
   "issues": {
@@ -101,11 +104,11 @@
       "stack": [
         "research"
       ],
-      "status": "claimed",
+      "status": "closed",
       "assignee": "JunMang01",
       "claimedAt": "2026-05-22T08:42:30Z",
-      "closedAt": null,
-      "mergedPr": null
+      "closedAt": "2026-05-22T14:28:52Z",
+      "mergedPr": 19
     },
     "7": {
       "number": 7,
@@ -257,6 +260,18 @@
       "developerDelta": 0.75,
       "reviewerDelta": 0.25,
       "createdAt": "2026-05-22T10:53:42Z"
+    },
+    {
+      "id": "pr-19-merge",
+      "type": "feature_merge",
+      "issue": 6,
+      "pr": 19,
+      "score": 1,
+      "developer": "JunMang01",
+      "reviewer": "MINTPIPERAS",
+      "developerDelta": 0.75,
+      "reviewerDelta": 0.25,
+      "createdAt": "2026-05-22T14:28:52Z"
     }
   ]
 }
