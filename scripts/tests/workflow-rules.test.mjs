@@ -12,7 +12,11 @@ import {
   parseClosingIssues,
 } from '../workflows/pr-parser.mjs';
 import { shouldWaitForMergeableState } from '../workflows/mergeable-state.mjs';
-import { pullNumberFromEvent } from '../workflows/action-context.mjs';
+import {
+  pullNumberFromEvent,
+  resolvePullNumberFromEvent,
+} from '../workflows/action-context.mjs';
+import { shouldDeferAutoMergeForForkReview } from '../workflows/auto-merge-rules.mjs';
 import {
   applyBugFixMerge,
   applyFeatureMerge,
@@ -325,11 +329,65 @@ test('pullNumberFromEvent supports workflow_run retry events', () => {
   );
 });
 
+test('resolvePullNumberFromEvent falls back to workflow_run head sha for fork PRs', async () => {
+  const client = {
+    async listOpenPulls() {
+      return [
+        { number: 12, head: { sha: 'old-sha' } },
+        { number: 13, head: { sha: 'fork-head-sha' } },
+      ];
+    },
+  };
+
+  assert.equal(
+    await resolvePullNumberFromEvent(client, {
+      workflow_run: {
+        pull_requests: [],
+        head_sha: 'fork-head-sha',
+      },
+    }),
+    13,
+  );
+});
+
+test('auto merge defers fork pull request review events to workflow_run', () => {
+  assert.equal(
+    shouldDeferAutoMergeForForkReview(
+      { review: { state: 'approved' } },
+      {
+        headRepoFullName: 'student/code-tape',
+        baseRepoFullName: 'ceilf6/code-tape',
+      },
+    ),
+    true,
+  );
+  assert.equal(
+    shouldDeferAutoMergeForForkReview(
+      { review: { state: 'approved' } },
+      {
+        headRepoFullName: 'ceilf6/code-tape',
+        baseRepoFullName: 'ceilf6/code-tape',
+      },
+    ),
+    false,
+  );
+  assert.equal(
+    shouldDeferAutoMergeForForkReview(
+      { issue: { pull_request: {} } },
+      {
+        headRepoFullName: 'student/code-tape',
+        baseRepoFullName: 'ceilf6/code-tape',
+      },
+    ),
+    false,
+  );
+});
+
 test('auto merge waits only for truly blocked mergeable states', () => {
   assert.equal(shouldWaitForMergeableState('clean'), false);
   assert.equal(shouldWaitForMergeableState('unstable'), false);
   assert.equal(shouldWaitForMergeableState(null), false);
+  assert.equal(shouldWaitForMergeableState('unknown'), false);
   assert.equal(shouldWaitForMergeableState('dirty'), true);
   assert.equal(shouldWaitForMergeableState('blocked'), true);
-  assert.equal(shouldWaitForMergeableState('unknown'), true);
 });

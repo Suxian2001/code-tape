@@ -20,8 +20,25 @@ export function pullNumberFromEvent(event) {
   return null;
 }
 
+export async function resolvePullNumberFromEvent(client, event) {
+  const directPullNumber = pullNumberFromEvent(event);
+  if (directPullNumber) {
+    return directPullNumber;
+  }
+
+  const workflowRunHeadSha = event.workflow_run?.head_sha;
+  if (!workflowRunHeadSha) {
+    return null;
+  }
+
+  const matchingPull = (await client.listOpenPulls()).find(
+    (pull) => pull?.head?.sha === workflowRunHeadSha,
+  );
+  return matchingPull?.number ?? null;
+}
+
 export async function loadPrGuardContext(client, event) {
-  const prNumber = pullNumberFromEvent(event);
+  const prNumber = await resolvePullNumberFromEvent(client, event);
   if (!prNumber) {
     throw new Error('event does not reference a pull request');
   }

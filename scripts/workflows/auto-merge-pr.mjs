@@ -1,4 +1,5 @@
 import { loadPrGuardContext } from './action-context.mjs';
+import { shouldDeferAutoMergeForForkReview } from './auto-merge-rules.mjs';
 import { evaluatePrGuard } from './guard-pr.mjs';
 import { GitHubClient, readEvent } from './github-client.mjs';
 import { shouldWaitForMergeableState } from './mergeable-state.mjs';
@@ -32,6 +33,11 @@ if (!result.ok) {
 
 if (context.rawPull.draft) {
   console.log(`PR #${context.pr.number} is draft; skipping auto merge`);
+  process.exit(0);
+}
+
+if (shouldDeferAutoMergeForForkReview(event, context.pr)) {
+  console.log(`PR #${context.pr.number} is from a fork review event; waiting for workflow_run with write permissions`);
   process.exit(0);
 }
 
