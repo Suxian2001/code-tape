@@ -124,19 +124,16 @@ test('parseClosingIssues accepts one closing keyword and rejects ambiguous PRs i
   assert.deepEqual(parseClosingIssues('Fixes #12\nResolves #13'), [12, 13]);
 });
 
-test('findValidReviewer accepts approve or CR comment after latest commit', () => {
+test('findValidReviewer requires first eligible commenter to post CR pass after latest commit', () => {
   const latestCommitAt = '2026-05-22T10:00:00.000Z';
-  const reviews = [
-    { user: { login: 'alice', type: 'User' }, state: 'APPROVED', submitted_at: '2026-05-22T11:00:00.000Z' },
-  ];
   const comments = [
     { user: { login: 'bob', type: 'User' }, body: 'CR通过', created_at: '2026-05-22T10:30:00.000Z' },
   ];
 
-  assert.equal(findValidReviewer({ reviews, comments, prAuthor: 'carol', latestCommitAt }), 'bob');
+  assert.equal(findValidReviewer({ reviews: [], comments, prAuthor: 'carol', latestCommitAt }), 'bob');
   assert.equal(
     findValidReviewer({
-      reviews: [{ user: { login: 'carol', type: 'User' }, state: 'APPROVED', submitted_at: '2026-05-22T11:00:00.000Z' }],
+      reviews: [{ user: { login: 'alice', type: 'User' }, state: 'APPROVED', submitted_at: '2026-05-22T11:00:00.000Z' }],
       comments: [],
       prAuthor: 'carol',
       latestCommitAt,
@@ -151,6 +148,70 @@ test('findValidReviewer accepts approve or CR comment after latest commit', () =
       latestCommitAt,
     }),
     null,
+  );
+});
+
+test('findValidReviewer only accepts CR pass from the first eligible PR commenter', () => {
+  const latestCommitAt = '2026-05-22T10:00:00.000Z';
+  const comments = [
+    { user: { login: 'alice', type: 'User' }, body: '这里有个问题需要改', created_at: '2026-05-22T10:05:00.000Z' },
+    { user: { login: 'bob', type: 'User' }, body: 'CR通过', created_at: '2026-05-22T10:20:00.000Z' },
+  ];
+
+  assert.equal(findValidReviewer({ reviews: [], comments, prAuthor: 'carol', latestCommitAt }), null);
+  assert.equal(
+    findValidReviewer({
+      reviews: [],
+      comments: [
+        ...comments,
+        { user: { login: 'alice', type: 'User' }, body: 'CR通过', created_at: '2026-05-22T10:30:00.000Z' },
+      ],
+      prAuthor: 'carol',
+      latestCommitAt,
+    }),
+    'alice',
+  );
+});
+
+test('findValidReviewer ignores bots and the PR author when claiming CR reviewer', () => {
+  const latestCommitAt = '2026-05-22T10:00:00.000Z';
+  const comments = [
+    { user: { login: 'github-actions[bot]', type: 'Bot' }, body: 'repo guard report', created_at: '2026-05-22T10:01:00.000Z' },
+    { user: { login: 'carol', type: 'User' }, body: '我补充一下', created_at: '2026-05-22T10:02:00.000Z' },
+    { user: { login: 'alice', type: 'User' }, body: '这里要改', created_at: '2026-05-22T10:03:00.000Z' },
+    { user: { login: 'alice', type: 'User' }, body: 'CR通过', created_at: '2026-05-22T10:30:00.000Z' },
+  ];
+
+  assert.equal(findValidReviewer({ reviews: [], comments, prAuthor: 'carol', latestCommitAt }), 'alice');
+});
+
+test('findValidReviewer keeps claimant after new commits but requires a fresh CR pass', () => {
+  const comments = [
+    { user: { login: 'alice', type: 'User' }, body: '这里要改', created_at: '2026-05-22T10:03:00.000Z' },
+    { user: { login: 'alice', type: 'User' }, body: 'CR通过', created_at: '2026-05-22T10:30:00.000Z' },
+    { user: { login: 'bob', type: 'User' }, body: 'CR通过', created_at: '2026-05-22T11:20:00.000Z' },
+  ];
+
+  assert.equal(
+    findValidReviewer({
+      reviews: [],
+      comments,
+      prAuthor: 'carol',
+      latestCommitAt: '2026-05-22T11:00:00.000Z',
+    }),
+    null,
+  );
+  assert.equal(
+    findValidReviewer({
+      reviews: [],
+      comments: [
+        ...comments,
+        { user: { login: 'alice', type: 'User' }, body: 'CR通过', created_at: '2026-05-22T11:30:00.000Z' },
+      ],
+      prAuthor: 'carol',
+      latestCommitAt: '2026-05-22T11:00:00.000Z',
+    }),
+    'alice',
   );
 });
 

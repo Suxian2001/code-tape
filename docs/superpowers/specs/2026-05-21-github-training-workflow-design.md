@@ -189,9 +189,11 @@ PR workflow 检查：
 
 - reviewer 不是 PR author。
 - reviewer 是 GitHub 用户，不是 bot。
-- reviewer 对 PR 提交了通过信号。
+- reviewer 不是 `github-actions[bot]`。
+- reviewer 是 PR conversation 中第一个有效评论者。
+- reviewer 本人在最新 commit 后评论精确通过信号。
 
-由于普通同学只有 `read` 权限，不能依赖 GitHub 分支保护里的 required approving reviews 作为唯一判断。CR 是否有效由 workflow 判定，优先接受 GitHub PR review 的 `APPROVED` 状态；如果 GitHub 权限或仓库设置导致普通同学无法提交可识别的 `APPROVED` review，则 workflow 也支持非作者同学在 PR 下评论精确关键词：
+由于普通同学只有 `read` 权限，不能依赖 GitHub 分支保护里的 required approving reviews 作为唯一判断。CR 是否有效由 workflow 判定：PR conversation 中第一个有效评论者自动认领 CR，只有该 reviewer 本人在 PR 下评论精确关键词才算通过：
 
 ```text
 CR通过
@@ -277,7 +279,7 @@ PR 合并后：
 - 开发者获得 `N * 75%`。
 - 有效 CR 同学获得 `N * 25%`。
 
-如果多人完成有效 CR，默认取最早有效 CR 作为计分 reviewer。
+如果多人参与 CR，默认取首个有效 PR 评论者作为计分 reviewer。
 
 ## Bug 返工规则
 

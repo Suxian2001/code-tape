@@ -1,4 +1,5 @@
 const closingKeywordPattern = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi;
+const ignoredReviewerLogins = new Set(['github-actions[bot]']);
 
 export function parseClosingIssues(body = '') {
   const issues = [];
@@ -16,42 +17,45 @@ export function requireSingleClosingIssue(body = '') {
   return issues[0];
 }
 
-export function findValidReviewer({ reviews = [], comments = [], prAuthor, latestCommitAt }) {
+function commentLogin(comment) {
+  return comment?.user?.login;
+}
+
+function commentCreatedAt(comment) {
+  return comment?.created_at || comment?.createdAt;
+}
+
+function isEligibleReviewerComment(comment, prAuthor) {
+  const login = commentLogin(comment);
+  const type = comment?.user?.type;
+  return Boolean(login) && login !== prAuthor && type !== 'Bot' && !ignoredReviewerLogins.has(login);
+}
+
+export function findClaimedReviewer({ comments = [], prAuthor }) {
+  const sortedComments = [...comments].sort(
+    (a, b) => Date.parse(commentCreatedAt(a)) - Date.parse(commentCreatedAt(b)),
+  );
+  const claimedComment = sortedComments.find((comment) => isEligibleReviewerComment(comment, prAuthor));
+  return commentLogin(claimedComment) ?? null;
+}
+
+export function findValidReviewer({ comments = [], prAuthor, latestCommitAt }) {
   const latestCommitTime = Date.parse(latestCommitAt || '1970-01-01T00:00:00.000Z');
-  const candidates = [];
-
-  for (const review of reviews) {
-    const login = review?.user?.login;
-    const type = review?.user?.type;
-    const submittedAt = review?.submitted_at || review?.submittedAt;
-    if (
-      review?.state === 'APPROVED' &&
-      login &&
-      login !== prAuthor &&
-      type !== 'Bot' &&
-      Date.parse(submittedAt) >= latestCommitTime
-    ) {
-      candidates.push({ login, at: submittedAt });
-    }
+  const claimedReviewer = findClaimedReviewer({ comments, prAuthor });
+  if (!claimedReviewer) {
+    return null;
   }
 
-  for (const comment of comments) {
-    const login = comment?.user?.login;
-    const type = comment?.user?.type;
-    const createdAt = comment?.created_at || comment?.createdAt;
-    if (
+  const hasFreshPass = comments.some((comment) => {
+    const createdAt = commentCreatedAt(comment);
+    return (
+      commentLogin(comment) === claimedReviewer &&
       comment?.body?.trim() === 'CR通过' &&
-      login &&
-      login !== prAuthor &&
-      type !== 'Bot' &&
       Date.parse(createdAt) >= latestCommitTime
-    ) {
-      candidates.push({ login, at: createdAt });
-    }
-  }
+    );
+  });
 
-  candidates.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  return candidates[0]?.login ?? null;
+  return hasFreshPass ? claimedReviewer : null;
 }
 
 export function isTimedOut(createdAt, now, hours = 24) {
