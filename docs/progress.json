@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-23T12:56:43Z",
+  "updatedAt": "2026-05-23T14:25:58Z",
   "students": {
     "ceilf6": {
       "activeIssue": null,
@@ -33,10 +33,10 @@
         6
       ],
       "bugPenalties": [],
-      "developmentScore": 0.75,
+      "developmentScore": 1.75,
       "reviewScore": 0.75,
       "penaltyScore": 0,
-      "totalScore": 1.5
+      "totalScore": 2.5
     },
     "Suxian2001": {
       "activeIssue": null,
@@ -45,10 +45,10 @@
       ],
       "reviewedIssues": [],
       "bugPenalties": [],
-      "developmentScore": 0.75,
+      "developmentScore": 1.75,
       "reviewScore": 0,
       "penaltyScore": 0,
-      "totalScore": 0.75
+      "totalScore": 1.75
     },
     "yangchloeeeee": {
       "activeIssue": null,
@@ -61,10 +61,10 @@
         40
       ],
       "bugPenalties": [],
-      "developmentScore": 1.5,
+      "developmentScore": 2.5,
       "reviewScore": 1.25,
       "penaltyScore": 0,
-      "totalScore": 2.75
+      "totalScore": 3.75
     },
     "JunMang01": {
       "activeIssue": null,
@@ -297,6 +297,60 @@
       "developerDelta": 3,
       "reviewerDelta": 1,
       "createdAt": "2026-05-23T12:56:43Z"
+    },
+    {
+      "id": "manual-bonus-issue-54-MINTPIPERAS",
+      "type": "manual_development_bonus",
+      "issue": 54,
+      "pr": null,
+      "score": 1,
+      "developer": "MINTPIPERAS",
+      "developerDelta": 1,
+      "sourceDiscussions": [
+        27,
+        28,
+        31,
+        20,
+        25
+      ],
+      "reason": "Discussions #27 #28 #31 #20 #25 建言献策贡献奖励",
+      "createdAt": "2026-05-23T14:25:58Z"
+    },
+    {
+      "id": "manual-bonus-issue-54-Suxian2001",
+      "type": "manual_development_bonus",
+      "issue": 54,
+      "pr": null,
+      "score": 1,
+      "developer": "Suxian2001",
+      "developerDelta": 1,
+      "sourceDiscussions": [
+        27,
+        28,
+        31,
+        20,
+        25
+      ],
+      "reason": "Discussions #27 #28 #31 #20 #25 建言献策贡献奖励",
+      "createdAt": "2026-05-23T14:25:58Z"
+    },
+    {
+      "id": "manual-bonus-issue-54-yangchloeeeee",
+      "type": "manual_development_bonus",
+      "issue": 54,
+      "pr": null,
+      "score": 1,
+      "developer": "yangchloeeeee",
+      "developerDelta": 1,
+      "sourceDiscussions": [
+        27,
+        28,
+        31,
+        20,
+        25
+      ],
+      "reason": "Discussions #27 #28 #31 #20 #25 建言献策贡献奖励",
+      "createdAt": "2026-05-23T14:25:58Z"
     }
   ]
 }

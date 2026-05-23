@@ -374,6 +374,36 @@ test('renderProgressMarkdown includes active tasks, score summary and ledger', (
   assert.match(markdown, /#12/);
 });
 
+test('renderProgressMarkdown includes manual development bonus ledger entries', () => {
+  const progress = createEmptyProgress();
+  progress.updatedAt = '2026-05-23T14:25:58Z';
+  progress.students.alice = {
+    activeIssue: null,
+    completedIssues: [],
+    reviewedIssues: [],
+    bugPenalties: [],
+    developmentScore: 1,
+    reviewScore: 0,
+    penaltyScore: 0,
+    totalScore: 1,
+  };
+  progress.ledger.push({
+    id: 'manual-bonus-issue-54-alice',
+    type: 'manual_development_bonus',
+    issue: 54,
+    pr: null,
+    score: 1,
+    developer: 'alice',
+    developerDelta: 1,
+    reason: 'Discussions #20 建议贡献奖励',
+    createdAt: '2026-05-23T14:25:58Z',
+  });
+
+  const markdown = renderProgressMarkdown(progress);
+  assert.match(markdown, /manual_development_bonus/);
+  assert.match(markdown, /\| #54 \| - \| alice \+1\.00 \(Discussions #20 建议贡献奖励\) \|/);
+});
+
 test('hasStatus checks labels from both strings and GitHub label objects', () => {
   assert.equal(hasStatus(['status:open'], 'open'), true);
   assert.equal(hasStatus([{ name: 'status:claimed' }], 'claimed'), true);

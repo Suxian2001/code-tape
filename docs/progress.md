@@ -2,7 +2,7 @@
 
 > 本文件由 GitHub Actions 自动生成，请勿手动修改。
 
-更新时间：2026-05-23T12:56:43Z
+更新时间：2026-05-23T14:25:58Z
 
 ## 当前任务
 
@@ -16,14 +16,17 @@
 | --- | --- | --- | --- | --- |
 | ceilf6 | 5.25 | 1.00 | 0.00 | 6.25 |
 | JunMang01 | 0.75 | 0.00 | 0.00 | 0.75 |
-| MINTPIPERAS | 0.75 | 0.75 | 0.00 | 1.50 |
-| Suxian2001 | 0.75 | 0.00 | 0.00 | 0.75 |
-| yangchloeeeee | 1.50 | 1.25 | 0.00 | 2.75 |
+| MINTPIPERAS | 1.75 | 0.75 | 0.00 | 2.50 |
+| Suxian2001 | 1.75 | 0.00 | 0.00 | 1.75 |
+| yangchloeeeee | 2.50 | 1.25 | 0.00 | 3.75 |
 
 ## 最近流水
 
 | 时间 | 类型 | Issue | PR | 变更 |
 | --- | --- | --- | --- | --- |
+| 2026-05-23 14:25:58Z | manual_development_bonus | #54 | - | MINTPIPERAS +1.00 (Discussions #27 #28 #31 #20 #25 建言献策贡献奖励) |
+| 2026-05-23 14:25:58Z | manual_development_bonus | #54 | - | Suxian2001 +1.00 (Discussions #27 #28 #31 #20 #25 建言献策贡献奖励) |
+| 2026-05-23 14:25:58Z | manual_development_bonus | #54 | - | yangchloeeeee +1.00 (Discussions #27 #28 #31 #20 #25 建言献策贡献奖励) |
 | 2026-05-23 12:56:43Z | feature_merge | #40 | #53 | ceilf6 +3.00, yangchloeeeee +1.00 |
 | 2026-05-22 14:28:52Z | feature_merge | #6 | #19 | JunMang01 +0.75, MINTPIPERAS +0.25 |
 | 2026-05-22 10:53:42Z | feature_merge | #7 | #18 | yangchloeeeee +0.75, ceilf6 +0.25 |

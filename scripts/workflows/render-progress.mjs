@@ -77,6 +77,9 @@ function prColumn(entry) {
   if (entry.type === 'bug_fix_merge') {
     return `#${entry.fixPr}`;
   }
+  if (entry.type === 'manual_development_bonus') {
+    return '-';
+  }
   return `#${entry.pr}`;
 }
 
@@ -88,6 +91,10 @@ function deltaColumn(entry) {
       `${entry.fixDeveloper} ${formatSigned(entry.fixDeveloperDelta)}`,
       `${entry.fixReviewer} ${formatSigned(entry.fixReviewerDelta)}`,
     ].join(', ');
+  }
+  if (entry.type === 'manual_development_bonus') {
+    const reason = entry.reason ? ` (${entry.reason})` : '';
+    return `${entry.developer} ${formatSigned(entry.developerDelta)}${reason}`;
   }
   return `${entry.developer} ${formatSigned(entry.developerDelta)}, ${entry.reviewer} ${formatSigned(entry.reviewerDelta)}`;
 }
