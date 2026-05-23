@@ -1,13 +1,14 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-23T12:47:56Z",
+  "updatedAt": "2026-05-23T12:56:43Z",
   "students": {
     "ceilf6": {
-      "activeIssue": 40,
+      "activeIssue": null,
       "completedIssues": [
         11,
         10,
-        8
+        8,
+        40
       ],
       "reviewedIssues": [
         4,
@@ -16,10 +17,10 @@
         7
       ],
       "bugPenalties": [],
-      "developmentScore": 2.25,
+      "developmentScore": 5.25,
       "reviewScore": 1,
       "penaltyScore": 0,
-      "totalScore": 3.25
+      "totalScore": 6.25
     },
     "MINTPIPERAS": {
       "activeIssue": null,
@@ -56,13 +57,14 @@
         7
       ],
       "reviewedIssues": [
-        10
+        10,
+        40
       ],
       "bugPenalties": [],
       "developmentScore": 1.5,
-      "reviewScore": 0.25,
+      "reviewScore": 1.25,
       "penaltyScore": 0,
-      "totalScore": 1.75
+      "totalScore": 2.75
     },
     "JunMang01": {
       "activeIssue": null,
@@ -180,11 +182,11 @@
       "title": "[技术文档] P0 技术方案与模块接口设计",
       "score": 4,
       "stack": [],
-      "status": "claimed",
+      "status": "closed",
       "assignee": "ceilf6",
       "claimedAt": "2026-05-23T12:47:56Z",
-      "closedAt": null,
-      "mergedPr": null
+      "closedAt": "2026-05-23T12:56:43Z",
+      "mergedPr": 53
     }
   },
   "ledger": [
@@ -283,6 +285,18 @@
       "developerDelta": 0.75,
       "reviewerDelta": 0.25,
       "createdAt": "2026-05-22T14:28:52Z"
+    },
+    {
+      "id": "pr-53-merge",
+      "type": "feature_merge",
+      "issue": 40,
+      "pr": 53,
+      "score": 4,
+      "developer": "ceilf6",
+      "reviewer": "yangchloeeeee",
+      "developerDelta": 3,
+      "reviewerDelta": 1,
+      "createdAt": "2026-05-23T12:56:43Z"
     }
   ]
 }
