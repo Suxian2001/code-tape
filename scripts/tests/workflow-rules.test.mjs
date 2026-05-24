@@ -29,6 +29,9 @@ import {
   classifyContractPaths,
   combineChangedFiles,
   evaluateGitNexusContract,
+  openVikingRemoveArgsForStat,
+  parseOpenVikingEnvFile,
+  toOpenVikingResourceUri,
   validateOpenVikingManifest,
 } from '../workflows/contract-rules.mjs';
 
@@ -385,6 +388,51 @@ test('validateOpenVikingManifest catches missing files duplicate URIs and stale 
   assert.match(result.reasons.join('\n'), /missing resource file/);
   assert.match(result.reasons.join('\n'), /duplicate OpenViking uri/);
   assert.match(result.reasons.join('\n'), /uri must be under/);
+});
+
+test('toOpenVikingResourceUri maps logical project URIs to resource URIs', () => {
+  assert.equal(
+    toOpenVikingResourceUri('/projects/code-tape/docs/技术方案.md'),
+    'viking://resources/projects/code-tape/docs/技术方案.md',
+  );
+  assert.equal(
+    toOpenVikingResourceUri('projects/code-tape/README.md'),
+    'viking://resources/projects/code-tape/README.md',
+  );
+  assert.equal(
+    toOpenVikingResourceUri('viking://resources/projects/code-tape/README.md'),
+    'viking://resources/projects/code-tape/README.md',
+  );
+});
+
+test('parseOpenVikingEnvFile supports local env values without leaking shell precedence', () => {
+  const env = parseOpenVikingEnvFile(
+    [
+      '# local secrets',
+      'OPENVIKING_BASE_URL=http://127.0.0.1:1933',
+      'OPENVIKING_API_KEY="secret"',
+      'OPENVIKING_CLI_COMMAND=$HOME/.local/bin/ov',
+      'bad line',
+    ].join('\n'),
+    { home: '/Users/example' },
+  );
+
+  assert.deepEqual(env, {
+    OPENVIKING_BASE_URL: 'http://127.0.0.1:1933',
+    OPENVIKING_API_KEY: 'secret',
+    OPENVIKING_CLI_COMMAND: '/Users/example/.local/bin/ov',
+  });
+});
+
+test('openVikingRemoveArgsForStat removes files and directories with matching ov commands', () => {
+  assert.deepEqual(
+    openVikingRemoveArgsForStat('viking://resources/projects/code-tape/README.md', { isDir: false }),
+    ['rm', 'viking://resources/projects/code-tape/README.md'],
+  );
+  assert.deepEqual(
+    openVikingRemoveArgsForStat('viking://resources/projects/code-tape/docs', { isDir: true }),
+    ['rm', '--recursive', 'viking://resources/projects/code-tape/docs'],
+  );
 });
 
 test('feature scoring writes idempotent ledger and clears active issue', () => {
