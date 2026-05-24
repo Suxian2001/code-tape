@@ -4,8 +4,6 @@ on:
   pull_request:
     branches: [main]
     types: [opened, edited, synchronize, reopened, ready_for_review]
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -24,13 +22,3 @@ jobs:
       - run: npm run contract:gitnexus
         env:
           GITNEXUS_IMPACT_SUMMARY: ${{ github.event.pull_request.body }}
-
-  openviking-manifest:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm run contract:openviking:check

@@ -3,12 +3,9 @@ import { execFileSync } from 'node:child_process';
 import {
   combineChangedFiles,
   evaluateGitNexusContract,
-  sha256File,
-  validateOpenVikingManifest,
 } from './contract-rules.mjs';
 
 const GITNEXUS_VERSION = '1.6.5';
-const OPENVIKING_MANIFEST = 'docs/contracts/openviking.resources.json';
 
 const command = process.argv[2] ?? 'check';
 
@@ -19,10 +16,7 @@ try {
     runGitNexusContract({ mode: 'local' });
   } else if (command === 'gitnexus') {
     runGitNexusContract({ mode: 'ci' });
-  } else if (command === 'openviking-check') {
-    runOpenVikingCheck();
   } else if (command === 'check') {
-    runOpenVikingCheck();
     runGitNexusContract({ mode: process.env.CI ? 'ci' : 'local' });
   } else {
     throw new Error(`unknown contract command: ${command}`);
@@ -51,22 +45,6 @@ function runGitNexusContract({ mode }) {
 
   printContractResult('GitNexus contract', result);
   if (!result.ok) process.exitCode = 1;
-}
-
-function runOpenVikingCheck() {
-  const manifest = readManifest();
-  const result = validateOpenVikingManifest({
-    manifest,
-    fileExists: existsSync,
-    sha256ForFile: sha256File,
-  });
-
-  printContractResult('OpenViking manifest', result);
-  if (!result.ok) process.exitCode = 1;
-}
-
-function readManifest() {
-  return JSON.parse(readFileSync(OPENVIKING_MANIFEST, 'utf8'));
 }
 
 function getChangedFiles(mode) {

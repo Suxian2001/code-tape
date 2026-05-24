@@ -6,8 +6,6 @@ superpowers
 
 .cursor
 .gitnexus
-.openviking
-*.ovpack
 
 node_modules
 dist

@@ -1,6 +1,3 @@
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-
 export const criticalContractRules = [
   {
     category: 'recording-schema',
@@ -116,63 +113,6 @@ function hasMeaningfulImpactSummary(value) {
   const normalized = value.trim();
   if (!normalized) return false;
   return !['-', '无', 'none', 'n/a', 'na', 'todo', '待补充'].includes(normalized.toLowerCase());
-}
-
-export function validateOpenVikingManifest({
-  manifest,
-  fileExists,
-  sha256ForFile,
-}) {
-  const reasons = [];
-  const warnings = [];
-  if (!manifest || typeof manifest !== 'object') {
-    return { ok: false, reasons: ['OpenViking manifest must be an object'], warnings };
-  }
-  if (manifest.rootUri !== '/projects/code-tape') {
-    reasons.push('OpenViking manifest rootUri must be /projects/code-tape');
-  }
-  if (!Array.isArray(manifest.resources) || manifest.resources.length === 0) {
-    reasons.push('OpenViking manifest resources must be a non-empty array');
-    return { ok: false, reasons, warnings };
-  }
-
-  const seenUris = new Set();
-  for (const resource of manifest.resources) {
-    if (!resource || typeof resource !== 'object') {
-      reasons.push('OpenViking resource entries must be objects');
-      continue;
-    }
-    if (!resource.path || typeof resource.path !== 'string') {
-      reasons.push('OpenViking resource is missing path');
-      continue;
-    }
-    if (!resource.uri || typeof resource.uri !== 'string') {
-      reasons.push(`OpenViking resource ${resource.path} is missing uri`);
-    } else if (!resource.uri.startsWith(`${manifest.rootUri}/`)) {
-      reasons.push(`OpenViking resource ${resource.path} uri must be under ${manifest.rootUri}`);
-    } else if (seenUris.has(resource.uri)) {
-      reasons.push(`duplicate OpenViking uri: ${resource.uri}`);
-    } else {
-      seenUris.add(resource.uri);
-    }
-    if (!resource.reason || typeof resource.reason !== 'string') {
-      reasons.push(`OpenViking resource ${resource.path} is missing reason`);
-    }
-    if (!fileExists(resource.path)) {
-      reasons.push(`missing resource file: ${resource.path}`);
-      continue;
-    }
-    const actualSha = sha256ForFile(resource.path);
-    if (resource.sha256 !== actualSha) {
-      reasons.push(`stale sha256 for ${resource.path}: expected ${actualSha}, got ${resource.sha256}`);
-    }
-  }
-
-  return { ok: reasons.length === 0, reasons, warnings };
-}
-
-export function sha256File(path) {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
 function normalizeFiles(files) {

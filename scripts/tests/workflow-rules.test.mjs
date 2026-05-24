@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -30,7 +30,6 @@ import {
   classifyContractPaths,
   combineChangedFiles,
   evaluateGitNexusContract,
-  validateOpenVikingManifest,
 } from '../workflows/contract-rules.mjs';
 
 test('parseScore requires exactly one score label', () => {
@@ -299,9 +298,9 @@ test('combineChangedFiles includes untracked files once', () => {
   assert.deepEqual(
     combineChangedFiles(
       ['scripts/workflows/contract-check.mjs', 'package.json'],
-      ['scripts/workflows/contract-check.mjs', 'docs/contracts/openviking.resources.json'],
+      ['scripts/workflows/contract-check.mjs', 'docs/知识库契约.md'],
     ),
-    ['scripts/workflows/contract-check.mjs', 'package.json', 'docs/contracts/openviking.resources.json'],
+    ['scripts/workflows/contract-check.mjs', 'package.json', 'docs/知识库契约.md'],
   );
 });
 
@@ -352,71 +351,33 @@ test('evaluateGitNexusContract treats non-critical changes as advisory', () => {
   assert.match(result.warnings.join('\n'), /No critical contract surface changed/);
 });
 
-test('validateOpenVikingManifest catches missing files duplicate URIs and stale hashes', () => {
-  const result = validateOpenVikingManifest({
-    manifest: {
-      rootUri: '/projects/code-tape',
-      resources: [
-        {
-          path: 'README.md',
-          uri: '/projects/code-tape/README.md',
-          sha256: 'stale',
-          reason: 'project entry',
-        },
-        {
-          path: 'missing.md',
-          uri: '/projects/code-tape/README.md',
-          sha256: 'unused',
-          reason: 'duplicate',
-        },
-        {
-          path: 'README.md',
-          uri: '/other-project/README.md',
-          sha256: 'fresh',
-          reason: 'wrong root',
-        },
-      ],
-    },
-    fileExists: (path) => path === 'README.md',
-    sha256ForFile: (path) => (path === 'README.md' ? 'fresh' : ''),
-  });
-
-  assert.equal(result.ok, false);
-  assert.match(result.reasons.join('\n'), /stale sha256/);
-  assert.match(result.reasons.join('\n'), /missing resource file/);
-  assert.match(result.reasons.join('\n'), /duplicate OpenViking uri/);
-  assert.match(result.reasons.join('\n'), /uri must be under/);
-});
-
-test('OpenViking contract stays static and does not require service connectivity', () => {
+test('retired knowledge service is no longer wired into repository contracts', () => {
   const checkedFiles = [
     'package.json',
     '.github/workflows/contract-guard.yml',
+    'README.md',
     'docs/知识库契约.md',
     'scripts/workflows/contract-check.mjs',
     'scripts/workflows/contract-rules.mjs',
   ];
   const content = checkedFiles.map((path) => readFileSync(path, 'utf8')).join('\n');
   const forbidden = [
-    ['contract:openviking', ':sync'],
-    ['openviking', '-sync'],
-    ['openviking', '-health'],
-    ['OPENVIKING', '_BASE_URL'],
-    ['OPENVIKING', '_API_KEY'],
-    ['OPENVIKING', '_ACCOUNT'],
-    ['OPENVIKING', '_USER'],
-    ['OPENVIKING', '_AGENT_ID'],
+    ['Open', 'Viking'],
+    ['open', 'viking'],
+    ['OPEN', 'VIKING'],
+    ['ov', 'pack'],
+    ['contract:open', 'viking'],
+    ['validateOpen', 'VikingManifest'],
+    ['runOpen', 'VikingCheck'],
+    ['docs/contracts/open', 'viking.resources.json'],
     ['ov', ' health'],
-    ['runOpenViking', 'Sync'],
-    ['requireOpenViking', 'Env'],
-    ['parseOpenViking', 'EnvFile'],
-    ['toOpenViking', 'ResourceUri'],
-    ['self-hosted, macOS', ', repo-guard-intranet'],
   ].map((parts) => parts.join(''));
 
   for (const phrase of forbidden) {
-    assert.equal(content.includes(phrase), false, `${phrase} should not be part of the static manifest contract`);
+    assert.equal(content.includes(phrase), false, `${phrase} should not remain in repository contracts`);
   }
+
+  assert.equal(existsSync(['docs/contracts/open', 'viking.resources.json'].join('')), false);
 });
 
 test('feature scoring writes idempotent ledger and clears active issue', () => {
