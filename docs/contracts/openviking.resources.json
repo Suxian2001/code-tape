@@ -50,8 +50,8 @@
       "reason": "训练营 Issue/PR/CR 工作流契约"
     },
     {
-      "path": "docs/契约增强.md",
-      "uri": "/projects/code-tape/docs/契约增强.md",
+      "path": "docs/知识库契约.md",
+      "uri": "/projects/code-tape/docs/知识库契约.md",
       "sha256": "c125906d96927314b22d9b3b1814cdfb34f518e7bddfb2c69905935a3823266a",
       "reason": "GitNexus 与 OpenViking 双层契约操作说明"
     }

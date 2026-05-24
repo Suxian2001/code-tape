@@ -392,7 +392,7 @@ test('OpenViking contract stays static and does not require service connectivity
   const checkedFiles = [
     'package.json',
     '.github/workflows/contract-guard.yml',
-    'docs/契约增强.md',
+    'docs/知识库契约.md',
     'scripts/workflows/contract-check.mjs',
     'scripts/workflows/contract-rules.mjs',
   ];

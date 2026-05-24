@@ -48,7 +48,7 @@ export const criticalContractRules = [
         'docs/技术模块拆解.md',
         'docs/项目时间规划.md',
         'docs/规范工作流程.md',
-        'docs/契约增强.md',
+        'docs/知识库契约.md',
       ].includes(file) ||
       file.startsWith('docs/contracts/') ||
       file.startsWith('docs/竞品分析/'),
