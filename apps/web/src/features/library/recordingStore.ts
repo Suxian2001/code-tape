@@ -1,0 +1,398 @@
+import JSZip from "jszip";
+import {
+  RECORDING_SCHEMA_VERSION,
+  validateRecordingPackageV1,
+} from "@/shared/recording-schema";
+import type {
+  PackageLoadResult,
+  RecordingEvent,
+  RecordingIndexes,
+  RecordingListItem,
+  RecordingManifest,
+  RecordingMedia,
+  RecordingMeta,
+  RecordingPackageV1,
+  RecordingRepository,
+  RecordingSnapshot,
+  SaveDraftInput,
+  SaveResult,
+} from "@/shared/recording-schema";
+import { generateId } from "@/shared/util/ids";
+import { canonicalStringify, sha256Hex } from "@/shared/util/hash";
+import { awaitTransaction, openDatabase, promisifyRequest } from "./idb";
+
+export type RecordingStoreOptions = {
+  databaseName?: string;
+  /** Drafts older than this are removed by sweep(). Defaults to 24h. */
+  draftMaxAgeMs?: number;
+};
+
+const DEFAULT_DB_NAME = "code-tape";
+const DB_VERSION = 1;
+const STORE_RECORDINGS = "recordings";
+const STORE_BLOBS = "blobs";
+
+type StoredRecording = {
+  id: string;
+  manifest: RecordingManifest;
+  meta: RecordingMeta;
+  events: RecordingEvent[];
+  snapshots: RecordingSnapshot[];
+  indexes: RecordingIndexes;
+  media: RecordingMedia | null;
+  blobId: string | null;
+  createdAtMs: number;
+};
+
+/**
+ * RecordingRepository backed by IndexedDB with explicit two-phase commit.
+ *
+ * Lifecycle:
+ *   1. saveDraft(input) writes the recording with `manifest.status = "draft"`
+ *      and stores the media blob in a sibling object store.
+ *   2. commit(recordingId) flips `manifest.status` to `"complete"` in a fresh
+ *      transaction.
+ * If the page is killed between (1) and (2), the recording stays as draft and
+ * sweep() will remove it after `draftMaxAgeMs`.
+ *
+ * The implementation never starts a long-running async operation inside a
+ * single transaction (we collect inputs first, then perform the writes in one
+ * tick) to avoid TransactionInactive errors in Chromium.
+ */
+export function createRecordingStore(options: RecordingStoreOptions = {}): RecordingRepository {
+  const databaseName = options.databaseName ?? DEFAULT_DB_NAME;
+  const draftMaxAgeMs = options.draftMaxAgeMs ?? 24 * 60 * 60 * 1000;
+
+  const getDb = (() => {
+    let cached: Promise<IDBDatabase> | null = null;
+    return () => {
+      if (!cached) {
+        cached = openDatabase({
+          name: databaseName,
+          version: DB_VERSION,
+          onUpgrade(db) {
+            if (!db.objectStoreNames.contains(STORE_RECORDINGS)) {
+              const recordings = db.createObjectStore(STORE_RECORDINGS, { keyPath: "id" });
+              recordings.createIndex("status", "manifest.status", { unique: false });
+              recordings.createIndex("createdAtMs", "createdAtMs", { unique: false });
+            }
+            if (!db.objectStoreNames.contains(STORE_BLOBS)) {
+              db.createObjectStore(STORE_BLOBS);
+            }
+          },
+        });
+      }
+      return cached;
+    };
+  })();
+
+  const readRecording = async (id: string): Promise<StoredRecording | null> => {
+    const db = await getDb();
+    const tx = db.transaction(STORE_RECORDINGS, "readonly");
+    const store = tx.objectStore(STORE_RECORDINGS);
+    const value = (await promisifyRequest(store.get(id))) as StoredRecording | undefined;
+    await awaitTransaction(tx);
+    return value ?? null;
+  };
+
+  type StoredBlob = { buffer: ArrayBuffer; mimeType: string };
+
+  const readBlob = async (blobId: string): Promise<Blob | null> => {
+    const db = await getDb();
+    const tx = db.transaction(STORE_BLOBS, "readonly");
+    const store = tx.objectStore(STORE_BLOBS);
+    const value = (await promisifyRequest(store.get(blobId))) as StoredBlob | undefined;
+    await awaitTransaction(tx);
+    if (!value) return null;
+    return new Blob([value.buffer], { type: value.mimeType });
+  };
+
+  return {
+    async saveDraft(input: SaveDraftInput): Promise<SaveResult> {
+      const db = await getDb();
+      const recordingId = input.meta.id;
+      const blobId = input.mediaBlob ? generateId("blob") : null;
+      const eventsSha256 = await sha256Hex(canonicalStringify(input.events));
+      const snapshotsSha256 = await sha256Hex(canonicalStringify(input.snapshots));
+
+      const stored: StoredRecording = {
+        id: recordingId,
+        manifest: {
+          packageId: generateId("pkg"),
+          schemaVersion: RECORDING_SCHEMA_VERSION,
+          status: "draft",
+          createdAt: input.meta.createdAt,
+          completedAt: null,
+          checksums: { eventsSha256, snapshotsSha256 },
+        },
+        meta: input.meta,
+        events: input.events,
+        snapshots: input.snapshots,
+        indexes: input.indexes,
+        media: input.mediaBlob && blobId
+          ? {
+              blobId,
+              mimeType: input.mediaBlob.type || "application/octet-stream",
+              durationMs: input.meta.durationMs,
+              sizeBytes: input.mediaBlob.size,
+              timelineOffsetMs: 0,
+              hasAudio: input.meta.mediaCapability.audio === "available",
+              hasCamera: input.meta.mediaCapability.camera === "available",
+            }
+          : null,
+        blobId,
+        createdAtMs: Date.now(),
+      };
+
+      // Materialize the blob to ArrayBuffer BEFORE opening the transaction so
+      // IDB sees a structured-clone-safe value (some engines lose Blob prototype
+      // through structured clone, breaking later .arrayBuffer() reads).
+      const bufferToStore = input.mediaBlob ? await input.mediaBlob.arrayBuffer() : null;
+      try {
+        const tx = db.transaction([STORE_RECORDINGS, STORE_BLOBS], "readwrite");
+        const recordings = tx.objectStore(STORE_RECORDINGS);
+        const blobs = tx.objectStore(STORE_BLOBS);
+        recordings.put(stored);
+        if (bufferToStore && blobId && input.mediaBlob) {
+          const payload: StoredBlob = { buffer: bufferToStore, mimeType: input.mediaBlob.type };
+          blobs.put(payload, blobId);
+        }
+        await awaitTransaction(tx);
+        return { ok: true, recordingId };
+      } catch (err) {
+        const message = (err as Error).message ?? "unknown";
+        const isQuota = /QuotaExceededError/i.test(message);
+        return {
+          ok: false,
+          reason: isQuota ? "quota-exceeded" : "media-write-failed",
+          message,
+        };
+      }
+    },
+
+    async commit(recordingId: string): Promise<SaveResult> {
+      const db = await getDb();
+      try {
+        const existing = await readRecording(recordingId);
+        if (!existing) {
+          return { ok: false, reason: "validation-failed", message: "draft not found" };
+        }
+        const updated: StoredRecording = {
+          ...existing,
+          manifest: { ...existing.manifest, status: "complete", completedAt: new Date().toISOString() },
+        };
+        const tx = db.transaction(STORE_RECORDINGS, "readwrite");
+        tx.objectStore(STORE_RECORDINGS).put(updated);
+        await awaitTransaction(tx);
+        return { ok: true, recordingId };
+      } catch (err) {
+        return { ok: false, reason: "unknown", message: (err as Error).message };
+      }
+    },
+
+    async list(): Promise<RecordingListItem[]> {
+      const db = await getDb();
+      const tx = db.transaction(STORE_RECORDINGS, "readonly");
+      const items = (await promisifyRequest(tx.objectStore(STORE_RECORDINGS).getAll())) as StoredRecording[];
+      await awaitTransaction(tx);
+      return items
+        .filter((item) => item.manifest.status === "complete")
+        .sort((a, b) => b.createdAtMs - a.createdAtMs)
+        .map((item) => ({
+          id: item.id,
+          title: item.meta.title,
+          createdAt: item.meta.createdAt,
+          durationMs: item.meta.durationMs,
+          ownerId: item.meta.ownerId,
+          creatorInfo: item.meta.creatorInfo,
+          initialLanguage: item.meta.initialLanguage,
+          hasAudio: item.media?.hasAudio ?? false,
+          hasCamera: item.media?.hasCamera ?? false,
+          thumbnailBlobId: null,
+        }));
+    },
+
+    async load(recordingId: string): Promise<PackageLoadResult> {
+      const stored = await readRecording(recordingId);
+      if (!stored) {
+        return { ok: false, error: { code: "incomplete-package", packageId: recordingId } };
+      }
+      if (stored.manifest.status !== "complete") {
+        return { ok: false, error: { code: "incomplete-package", packageId: stored.manifest.packageId } };
+      }
+      const pkg: RecordingPackageV1 = {
+        schemaVersion: RECORDING_SCHEMA_VERSION,
+        manifest: stored.manifest,
+        meta: stored.meta,
+        events: stored.events,
+        snapshots: stored.snapshots,
+        media: stored.media,
+        indexes: stored.indexes,
+      };
+      const valid = validateRecordingPackageV1(pkg);
+      if (!valid.ok) {
+        return {
+          ok: false,
+          error: {
+            code: "invalid-manifest",
+            message: valid.errors.map((e) => `${e.path}: ${e.message}`).join("; "),
+          },
+        };
+      }
+      return { ok: true, package: pkg, warnings: [] };
+    },
+
+    async rename(recordingId: string, title: string): Promise<void> {
+      const db = await getDb();
+      const existing = await readRecording(recordingId);
+      if (!existing) return;
+      const updated: StoredRecording = {
+        ...existing,
+        meta: { ...existing.meta, title },
+      };
+      const tx = db.transaction(STORE_RECORDINGS, "readwrite");
+      tx.objectStore(STORE_RECORDINGS).put(updated);
+      await awaitTransaction(tx);
+    },
+
+    async remove(recordingId: string): Promise<void> {
+      const db = await getDb();
+      const existing = await readRecording(recordingId);
+      if (!existing) return;
+      const tx = db.transaction([STORE_RECORDINGS, STORE_BLOBS], "readwrite");
+      tx.objectStore(STORE_RECORDINGS).delete(recordingId);
+      if (existing.blobId) tx.objectStore(STORE_BLOBS).delete(existing.blobId);
+      await awaitTransaction(tx);
+    },
+
+    async exportZip(recordingId: string): Promise<Blob> {
+      const stored = await readRecording(recordingId);
+      if (!stored) throw new Error(`recording ${recordingId} not found`);
+      const zip = new JSZip();
+      zip.file("manifest.json", JSON.stringify(stored.manifest, null, 2));
+      zip.file("meta.json", JSON.stringify(stored.meta, null, 2));
+      zip.file("events.json", JSON.stringify(stored.events));
+      zip.file("snapshots.json", JSON.stringify(stored.snapshots));
+      zip.file("indexes.json", JSON.stringify(stored.indexes));
+      if (stored.blobId) {
+        const blob = await readBlob(stored.blobId);
+        if (blob) {
+          const mime = stored.media?.mimeType ?? blob.type ?? "";
+          // Convert to ArrayBuffer so JSZip handles it the same way across
+          // browsers (Chromium, Firefox, Safari, and our polyfilled jsdom).
+          const buffer = await blob.arrayBuffer();
+          zip.file(`media${extensionFor(mime)}`, buffer);
+        }
+      }
+      return zip.generateAsync({ type: "blob" });
+    },
+
+    async importZip(zip: Blob): Promise<SaveResult> {
+      try {
+        const archive = await JSZip.loadAsync(zip);
+        const manifestFile = archive.file("manifest.json");
+        const metaFile = archive.file("meta.json");
+        const eventsFile = archive.file("events.json");
+        const snapshotsFile = archive.file("snapshots.json");
+        const indexesFile = archive.file("indexes.json");
+        if (!manifestFile || !metaFile || !eventsFile || !snapshotsFile) {
+          return { ok: false, reason: "validation-failed", message: "incomplete zip" };
+        }
+        const [metaRaw, eventsRaw, snapshotsRaw, indexesRaw] = await Promise.all([
+          metaFile.async("string"),
+          eventsFile.async("string"),
+          snapshotsFile.async("string"),
+          indexesFile?.async("string") ?? Promise.resolve(""),
+        ]);
+        // manifestFile presence already validated above; we regenerate manifest on save.
+        void manifestFile;
+        const meta = JSON.parse(metaRaw) as RecordingMeta;
+        const events = JSON.parse(eventsRaw) as RecordingEvent[];
+        const snapshots = JSON.parse(snapshotsRaw) as RecordingSnapshot[];
+        const indexes = indexesRaw ? (JSON.parse(indexesRaw) as RecordingIndexes) : emptyIndexes();
+        const mediaEntry = Object.keys(archive.files).find((n) => n.startsWith("media."));
+        const mediaBlob = mediaEntry ? await archive.file(mediaEntry)!.async("blob") : null;
+        const saved = await this.saveDraft({ meta, events, snapshots, indexes, mediaBlob });
+        if (!saved.ok) return saved;
+        return this.commit(saved.recordingId);
+      } catch (err) {
+        return { ok: false, reason: "unknown", message: (err as Error).message };
+      }
+    },
+
+    async sweep(): Promise<{ removedDrafts: number; removedBlobs: number }> {
+      const db = await getDb();
+      const tx = db.transaction([STORE_RECORDINGS, STORE_BLOBS], "readwrite");
+      const recordings = tx.objectStore(STORE_RECORDINGS);
+      const blobs = tx.objectStore(STORE_BLOBS);
+      const all = (await promisifyRequest(recordings.getAll())) as StoredRecording[];
+      const allBlobKeys = (await promisifyRequest(blobs.getAllKeys())) as IDBValidKey[];
+      let removedDrafts = 0;
+      let removedBlobs = 0;
+      const referencedBlobIds = new Set<string>();
+      const now = Date.now();
+      for (const item of all) {
+        if (item.manifest.status === "draft" && now - item.createdAtMs > draftMaxAgeMs) {
+          recordings.delete(item.id);
+          if (item.blobId) blobs.delete(item.blobId);
+          removedDrafts += 1;
+        } else if (item.blobId) {
+          referencedBlobIds.add(item.blobId);
+        }
+      }
+      for (const key of allBlobKeys) {
+        if (typeof key === "string" && !referencedBlobIds.has(key)) {
+          blobs.delete(key);
+          removedBlobs += 1;
+        }
+      }
+      await awaitTransaction(tx);
+      return { removedDrafts, removedBlobs };
+    },
+
+    async estimateQuota(): Promise<{ usageBytes: number; quotaBytes: number }> {
+      if (typeof navigator !== "undefined" && navigator.storage && navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        return { usageBytes: estimate.usage ?? 0, quotaBytes: estimate.quota ?? 0 };
+      }
+      return { usageBytes: 0, quotaBytes: 0 };
+    },
+  };
+}
+
+function extensionFor(mimeType: string | undefined | null): string {
+  if (!mimeType) return ".bin";
+  if (mimeType.includes("webm")) return ".webm";
+  if (mimeType.includes("mp4")) return ".mp4";
+  if (mimeType.includes("ogg")) return ".ogg";
+  return ".bin";
+}
+
+function emptyIndexes(): RecordingIndexes {
+  return {
+    generatedAt: new Date().toISOString(),
+    eventsByType: {
+      "record-start": [],
+      "record-pause": [],
+      "record-resume": [],
+      "resume-baseline": [],
+      "record-stop": [],
+      "content-change": [],
+      "language-change": [],
+      "selection-change": [],
+      "editor-scroll": [],
+      "mouse-move": [],
+      "mouse-click": [],
+      "shortcut": [],
+      "media-toggle": [],
+      "media-warning": [],
+      "camera-position": [],
+      "run-start": [],
+      "run-output": [],
+      "run-error": [],
+      "chapter-marker": [],
+    },
+    snapshotSeqsByTime: [],
+    markers: [],
+  };
+}

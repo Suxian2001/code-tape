@@ -179,8 +179,8 @@ describe("createReplayScheduler", () => {
     expect(seen).toContain("playing");
     expect(seen).toContain("paused");
 
-    wall = 600;
     scheduler.play();
+    wall += 600; // advance wall enough to push timeline past duration
     scheduler.tick();
     expect(scheduler.getStableState().editor.code).toBe("a");
     expect(seen).toContain("ended");

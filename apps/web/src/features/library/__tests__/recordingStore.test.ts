@@ -1,0 +1,188 @@
+import "fake-indexeddb/auto";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createRecordingStore } from "../recordingStore";
+import type {
+  RecordingEvent,
+  RecordingIndexes,
+  RecordingMeta,
+  RecordingSnapshot,
+  SaveDraftInput,
+} from "@/shared/recording-schema";
+
+function makeMeta(id = "rec-1"): RecordingMeta {
+  return {
+    id,
+    title: "demo",
+    createdAt: "2026-05-24T00:00:00.000Z",
+    durationMs: 5_000,
+    appVersion: "0.0.0",
+    ownerId: null,
+    creatorInfo: { displayName: "ceilf6", source: "local" },
+    initialLanguage: "javascript",
+    initialFontSize: 14,
+    initialTheme: "dark",
+    mediaCapability: {
+      audio: "available",
+      camera: "available",
+      selectedAudioDeviceId: null,
+      selectedCameraDeviceId: null,
+    },
+  };
+}
+
+function makeEvent(seq: number): RecordingEvent {
+  return {
+    id: `e-${seq}`,
+    seq,
+    timestampMs: seq * 100,
+    source: "editor",
+    track: "main",
+    type: "content-change",
+    payload: {
+      fileId: "main",
+      version: seq,
+      code: `v${seq}`,
+      contentHash: `h${seq}`,
+      language: "javascript",
+      changeReason: "input",
+      changeCount: 1,
+      flushedBy: "debounce",
+    },
+  };
+}
+
+function emptyIndexes(): RecordingIndexes {
+  return {
+    generatedAt: "2026-05-24T00:00:00.000Z",
+    eventsByType: {} as Record<string, number[]>,
+    snapshotSeqsByTime: [],
+    markers: [],
+  } as RecordingIndexes;
+}
+
+function makeSnapshot(eventSeq: number): RecordingSnapshot {
+  return {
+    id: `snap-${eventSeq}`,
+    timestampMs: eventSeq * 100,
+    eventSeq,
+    state: {
+      editor: {
+        code: `v${eventSeq}`,
+        language: "javascript",
+        cursor: null,
+        selection: null,
+        scrollTop: 0,
+        scrollLeft: 0,
+        fontSize: 14,
+        theme: "dark",
+      },
+      pointer: null,
+      media: { microphoneEnabled: false, cameraEnabled: false, cameraPosition: { x: 0, y: 0 } },
+      runtime: { status: "idle", stdout: [], stderr: [], previewHtml: null, errorMessage: null },
+    },
+  };
+}
+
+function makeInput(metaId = "rec-1"): SaveDraftInput {
+  return {
+    meta: makeMeta(metaId),
+    events: [makeEvent(1), makeEvent(2)],
+    snapshots: [makeSnapshot(2)],
+    indexes: emptyIndexes(),
+    mediaBlob: new Blob(["binary"], { type: "audio/webm" }),
+  };
+}
+
+let dbCounter = 0;
+function uniqueDbName() {
+  dbCounter += 1;
+  return `code-tape-test-${dbCounter}`;
+}
+
+beforeEach(() => {
+  /* fake-indexeddb auto-wipes; nothing to do, each test uses a unique db name */
+});
+
+afterEach(async () => {
+  /* fake-indexeddb already gives us isolated databases through name uniqueness */
+});
+
+describe("createRecordingStore — two-phase commit", () => {
+  it("saveDraft stores recording with manifest.status=draft and list excludes it", async () => {
+    const store = createRecordingStore({ databaseName: uniqueDbName() });
+    const result = await store.saveDraft(makeInput("rec-draft"));
+    expect(result.ok).toBe(true);
+    const list = await store.list();
+    expect(list.length).toBe(0); // drafts are invisible to list
+  });
+
+  it("commit transitions the draft to complete and list surfaces it", async () => {
+    const store = createRecordingStore({ databaseName: uniqueDbName() });
+    await store.saveDraft(makeInput("rec-1"));
+    await store.commit("rec-1");
+    const list = await store.list();
+    expect(list.length).toBe(1);
+    expect(list[0].id).toBe("rec-1");
+  });
+
+  it("load round-trips the package and validates it", async () => {
+    const store = createRecordingStore({ databaseName: uniqueDbName() });
+    await store.saveDraft(makeInput("rec-1"));
+    await store.commit("rec-1");
+    const result = await store.load("rec-1");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.package.meta.id).toBe("rec-1");
+      expect(result.package.events.length).toBe(2);
+      expect(result.package.manifest.status).toBe("complete");
+    }
+  });
+
+  it("load on a draft returns incomplete-package", async () => {
+    const store = createRecordingStore({ databaseName: uniqueDbName() });
+    await store.saveDraft(makeInput("rec-1"));
+    const result = await store.load("rec-1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("incomplete-package");
+  });
+
+  it("rename updates the meta.title", async () => {
+    const store = createRecordingStore({ databaseName: uniqueDbName() });
+    await store.saveDraft(makeInput("rec-1"));
+    await store.commit("rec-1");
+    await store.rename("rec-1", "renamed!");
+    const list = await store.list();
+    expect(list[0].title).toBe("renamed!");
+  });
+
+  it("remove deletes the recording and its media blob", async () => {
+    const store = createRecordingStore({ databaseName: uniqueDbName() });
+    await store.saveDraft(makeInput("rec-1"));
+    await store.commit("rec-1");
+    await store.remove("rec-1");
+    const list = await store.list();
+    expect(list.length).toBe(0);
+  });
+
+  it("sweep removes drafts older than max age and frees their blobs", async () => {
+    const store = createRecordingStore({ databaseName: uniqueDbName(), draftMaxAgeMs: 1 });
+    await store.saveDraft(makeInput("rec-old"));
+    await new Promise((r) => setTimeout(r, 5));
+    const result = await store.sweep();
+    expect(result.removedDrafts).toBeGreaterThanOrEqual(1);
+  });
+
+  it("exportZip then importZip survives the round-trip", async () => {
+    const store = createRecordingStore({ databaseName: uniqueDbName() });
+    await store.saveDraft(makeInput("rec-export"));
+    await store.commit("rec-export");
+    const zipBlob = await store.exportZip("rec-export");
+    expect(zipBlob.size).toBeGreaterThan(0);
+
+    const sink = createRecordingStore({ databaseName: uniqueDbName() });
+    const imported = await sink.importZip(zipBlob);
+    expect(imported.ok).toBe(true);
+    const list = await sink.list();
+    expect(list[0].id).toBe("rec-export");
+  });
+});
