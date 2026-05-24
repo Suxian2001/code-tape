@@ -2,7 +2,7 @@ name: Training PR Auto Merge
 
 on:
   workflow_run:
-    workflows: ["Training PR Guard", "Workflow Tests"]
+    workflows: ["Training PR Guard", "Workflow Tests", "Contract Guard"]
     types: [completed]
   pull_request_target:
     branches: [main]

@@ -7,6 +7,12 @@
   ],
   "scripts": {
     "test": "node --test scripts/tests/*.test.mjs",
+    "agent:bootstrap": "node scripts/workflows/contract-check.mjs bootstrap",
+    "contract:local": "node scripts/workflows/contract-check.mjs local",
+    "contract:check": "node scripts/workflows/contract-check.mjs check",
+    "contract:gitnexus": "node scripts/workflows/contract-check.mjs gitnexus",
+    "contract:openviking:check": "node scripts/workflows/contract-check.mjs openviking-check",
+    "contract:openviking:sync": "node scripts/workflows/contract-check.mjs openviking-sync",
     "dev": "npm run dev -w apps/web",
     "build": "npm run build -w apps/web",
     "preview": "npm run preview -w apps/web",

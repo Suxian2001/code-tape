@@ -25,6 +25,12 @@ import {
 } from '../workflows/progress-store.mjs';
 import { renderProgressMarkdown } from '../workflows/render-progress.mjs';
 import { evaluatePrGuard } from '../workflows/guard-pr.mjs';
+import {
+  classifyContractPaths,
+  combineChangedFiles,
+  evaluateGitNexusContract,
+  validateOpenVikingManifest,
+} from '../workflows/contract-rules.mjs';
 
 test('parseScore requires exactly one score label', () => {
   assert.equal(parseScore(['score:5', 'stack:react', 'status:open']), 5);
@@ -264,6 +270,121 @@ test('evaluatePrGuard enforces issue linkage, ownership, protected files, CR and
 
   assert.equal(protectedFile.ok, false);
   assert.match(protectedFile.reasons.join('\n'), /protected progress files/);
+});
+
+test('classifyContractPaths recognizes core architecture surfaces', () => {
+  const result = classifyContractPaths([
+    'apps/web/src/shared/recording-schema/types.ts',
+    'apps/web/src/features/runtime-preview/iframeRuntime.ts',
+    'apps/web/src/features/library/recordingStore.ts',
+    'apps/web/src/features/player/replayScheduler.ts',
+    'scripts/workflows/guard-pr.mjs',
+    'docs/技术方案.md',
+    'apps/web/src/features/editor/CodeEditor.tsx',
+  ]);
+
+  assert.deepEqual(result.critical.map((item) => item.category), [
+    'recording-schema',
+    'runtime-preview',
+    'recording-repository',
+    'replay-core',
+    'workflow-contract',
+    'authority-docs',
+  ]);
+  assert.deepEqual(result.nonCritical, ['apps/web/src/features/editor/CodeEditor.tsx']);
+});
+
+test('combineChangedFiles includes untracked files once', () => {
+  assert.deepEqual(
+    combineChangedFiles(
+      ['scripts/workflows/contract-check.mjs', 'package.json'],
+      ['scripts/workflows/contract-check.mjs', 'docs/contracts/openviking.resources.json'],
+    ),
+    ['scripts/workflows/contract-check.mjs', 'package.json', 'docs/contracts/openviking.resources.json'],
+  );
+});
+
+test('evaluateGitNexusContract blocks critical changes without tests and impact summary', () => {
+  const result = evaluateGitNexusContract({
+    changedFiles: ['apps/web/src/shared/recording-schema/validators.ts'],
+    impactSummary: '',
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.reasons.join('\n'), /Missing contract test/);
+  assert.match(result.reasons.join('\n'), /Missing GitNexus impact summary/);
+  assert.ok(result.suggestions.some((line) => line.includes('detect_changes')));
+});
+
+test('evaluateGitNexusContract rejects placeholder impact summaries', () => {
+  const result = evaluateGitNexusContract({
+    changedFiles: [
+      'apps/web/src/features/runtime-preview/iframeRuntime.ts',
+      'apps/web/src/features/runtime-preview/__tests__/iframeRuntime.test.ts',
+    ],
+    impactSummary: '-',
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.reasons.join('\n'), /Missing GitNexus impact summary/);
+});
+
+test('evaluateGitNexusContract accepts critical changes with matching tests and impact summary', () => {
+  const result = evaluateGitNexusContract({
+    changedFiles: [
+      'apps/web/src/shared/recording-schema/validators.ts',
+      'apps/web/src/shared/recording-schema/__tests__/validators.test.ts',
+    ],
+    impactSummary: 'GitNexus impact: schema validators only affect loader tests.',
+  });
+
+  assert.equal(result.ok, true);
+});
+
+test('evaluateGitNexusContract treats non-critical changes as advisory', () => {
+  const result = evaluateGitNexusContract({
+    changedFiles: ['apps/web/src/features/editor/CodeEditor.tsx'],
+    impactSummary: '',
+  });
+
+  assert.equal(result.ok, true);
+  assert.match(result.warnings.join('\n'), /No critical contract surface changed/);
+});
+
+test('validateOpenVikingManifest catches missing files duplicate URIs and stale hashes', () => {
+  const result = validateOpenVikingManifest({
+    manifest: {
+      rootUri: '/projects/code-tape',
+      resources: [
+        {
+          path: 'README.md',
+          uri: '/projects/code-tape/README.md',
+          sha256: 'stale',
+          reason: 'project entry',
+        },
+        {
+          path: 'missing.md',
+          uri: '/projects/code-tape/README.md',
+          sha256: 'unused',
+          reason: 'duplicate',
+        },
+        {
+          path: 'README.md',
+          uri: '/other-project/README.md',
+          sha256: 'fresh',
+          reason: 'wrong root',
+        },
+      ],
+    },
+    fileExists: (path) => path === 'README.md',
+    sha256ForFile: (path) => (path === 'README.md' ? 'fresh' : ''),
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.reasons.join('\n'), /stale sha256/);
+  assert.match(result.reasons.join('\n'), /missing resource file/);
+  assert.match(result.reasons.join('\n'), /duplicate OpenViking uri/);
+  assert.match(result.reasons.join('\n'), /uri must be under/);
 });
 
 test('feature scoring writes idempotent ledger and clears active issue', () => {
