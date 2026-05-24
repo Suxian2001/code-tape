@@ -1,3 +1,9 @@
+export const CONTRACT_DIFF_FILTER = 'ACDMRTUXB';
+
+const impactSummaryFields = ['风险等级', '关键骨架变更', 'GitNexus 影响面', '验证结果'];
+const impactSummaryPlaceholders = new Set(['-', '无', 'none', 'n/a', 'na', 'todo', '待补充']);
+const riskLevels = new Set(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
+
 export const criticalContractRules = [
   {
     category: 'recording-schema',
@@ -96,9 +102,7 @@ export function evaluateGitNexusContract({ changedFiles, impactSummary = '' }) {
     }
   }
 
-  if (!hasMeaningfulImpactSummary(impactSummary)) {
-    reasons.push('Missing GitNexus impact summary. Set GITNEXUS_IMPACT_SUMMARY locally or fill the PR template.');
-  }
+  reasons.push(...validateStructuredImpactSummary(impactSummary));
 
   return {
     ok: reasons.length === 0,
@@ -109,10 +113,62 @@ export function evaluateGitNexusContract({ changedFiles, impactSummary = '' }) {
   };
 }
 
-function hasMeaningfulImpactSummary(value) {
+export function extractImpactSummary(text) {
+  const lines = text.split(/\r?\n/);
+  const headingIndex = lines.findIndex((line) =>
+    /^#{1,6}\s*GitNexus\s*影响分析摘要\s*$/iu.test(line.trim()),
+  );
+  if (headingIndex === -1) return text.trim();
+
+  const section = [];
+  for (const line of lines.slice(headingIndex + 1)) {
+    if (/^#{1,6}\s+\S/u.test(line.trim())) break;
+    section.push(line);
+  }
+  return section.join('\n').trim();
+}
+
+function validateStructuredImpactSummary(value) {
   const normalized = value.trim();
-  if (!normalized) return false;
-  return !['-', '无', 'none', 'n/a', 'na', 'todo', '待补充'].includes(normalized.toLowerCase());
+  if (isPlaceholder(normalized)) {
+    return ['Missing structured GitNexus impact summary. Fill the PR template fields for critical skeleton changes.'];
+  }
+
+  const fields = parseImpactSummaryFields(normalized);
+  const reasons = [];
+  for (const field of impactSummaryFields) {
+    const fieldValue = fields.get(field);
+    if (fieldValue === undefined) {
+      reasons.push(`Missing GitNexus impact summary field: ${field}`);
+    } else if (isPlaceholder(fieldValue)) {
+      reasons.push(`GitNexus impact summary field is empty or placeholder: ${field}`);
+    }
+  }
+
+  const riskLevel = fields.get('风险等级')?.toUpperCase();
+  if (riskLevel && !riskLevels.has(riskLevel)) {
+    reasons.push('Invalid GitNexus risk level. Use LOW, MEDIUM, HIGH, or CRITICAL.');
+  }
+
+  const impact = fields.get('GitNexus 影响面')?.toLowerCase();
+  if (impact && (!impact.includes('detect_changes') || !/\b(query|context|impact)\b/u.test(impact))) {
+    reasons.push('GitNexus 影响面 must mention detect_changes and one of query/context/impact.');
+  }
+
+  return reasons;
+}
+
+function parseImpactSummaryFields(value) {
+  const fields = new Map();
+  for (const line of value.split(/\r?\n/)) {
+    const match = /^\s*(?:[-*]\s*)?(?:\*\*)?([^:*：]+?)(?:\*\*)?\s*[:：]\s*(.*)\s*$/u.exec(line);
+    if (match) fields.set(match[1].trim(), match[2].trim());
+  }
+  return fields;
+}
+
+function isPlaceholder(value) {
+  return !value.trim() || impactSummaryPlaceholders.has(value.trim().toLowerCase());
 }
 
 function normalizeFiles(files) {

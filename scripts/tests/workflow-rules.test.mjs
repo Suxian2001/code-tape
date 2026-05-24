@@ -27,10 +27,19 @@ import {
 import { renderProgressMarkdown } from '../workflows/render-progress.mjs';
 import { evaluatePrGuard } from '../workflows/guard-pr.mjs';
 import {
+  CONTRACT_DIFF_FILTER,
   classifyContractPaths,
   combineChangedFiles,
   evaluateGitNexusContract,
+  extractImpactSummary,
 } from '../workflows/contract-rules.mjs';
+
+const validGitNexusSummary = [
+  '- 风险等级: HIGH',
+  '- 关键骨架变更: apps/web/src/shared/recording-schema/validators.ts',
+  '- GitNexus 影响面: detect_changes and context confirmed schema validators affect loader tests only.',
+  '- 验证结果: npm test passed',
+].join('\n');
 
 test('parseScore requires exactly one score label', () => {
   assert.equal(parseScore(['score:5', 'stack:react', 'status:open']), 5);
@@ -304,6 +313,10 @@ test('combineChangedFiles includes untracked files once', () => {
   );
 });
 
+test('contract diff filter includes deleted files', () => {
+  assert.equal(CONTRACT_DIFF_FILTER.includes('D'), true);
+});
+
 test('evaluateGitNexusContract blocks critical changes without tests and impact summary', () => {
   const result = evaluateGitNexusContract({
     changedFiles: ['apps/web/src/shared/recording-schema/validators.ts'],
@@ -312,7 +325,7 @@ test('evaluateGitNexusContract blocks critical changes without tests and impact 
 
   assert.equal(result.ok, false);
   assert.match(result.reasons.join('\n'), /Missing contract test/);
-  assert.match(result.reasons.join('\n'), /Missing GitNexus impact summary/);
+  assert.match(result.reasons.join('\n'), /structured GitNexus impact summary/);
   assert.ok(result.suggestions.some((line) => line.includes('detect_changes')));
 });
 
@@ -326,7 +339,45 @@ test('evaluateGitNexusContract rejects placeholder impact summaries', () => {
   });
 
   assert.equal(result.ok, false);
-  assert.match(result.reasons.join('\n'), /Missing GitNexus impact summary/);
+  assert.match(result.reasons.join('\n'), /structured GitNexus impact summary/);
+});
+
+test('evaluateGitNexusContract rejects unstructured impact summaries', () => {
+  const result = evaluateGitNexusContract({
+    changedFiles: [
+      'apps/web/src/features/runtime-preview/iframeRuntime.ts',
+      'apps/web/src/features/runtime-preview/__tests__/iframeRuntime.test.ts',
+    ],
+    impactSummary: 'I checked GitNexus and it looks fine.',
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.reasons.join('\n'), /Missing GitNexus impact summary field: 风险等级/);
+});
+
+test('extractImpactSummary stops at the next PR template section', () => {
+  const summary = extractImpactSummary([
+    '## 变更说明',
+    '',
+    '-',
+    '',
+    '## GitNexus 影响分析摘要',
+    '',
+    '-',
+    '',
+    '## 自检',
+    '',
+    '- [ ] 已运行 npm run contract:local',
+  ].join('\n'));
+
+  const result = evaluateGitNexusContract({
+    changedFiles: ['scripts/workflows/contract-check.mjs', 'scripts/tests/workflow-rules.test.mjs'],
+    impactSummary: summary,
+  });
+
+  assert.equal(summary, '-');
+  assert.equal(result.ok, false);
+  assert.match(result.reasons.join('\n'), /structured GitNexus impact summary/);
 });
 
 test('evaluateGitNexusContract accepts critical changes with matching tests and impact summary', () => {
@@ -335,7 +386,7 @@ test('evaluateGitNexusContract accepts critical changes with matching tests and 
       'apps/web/src/shared/recording-schema/validators.ts',
       'apps/web/src/shared/recording-schema/__tests__/validators.test.ts',
     ],
-    impactSummary: 'GitNexus impact: schema validators only affect loader tests.',
+    impactSummary: validGitNexusSummary,
   });
 
   assert.equal(result.ok, true);

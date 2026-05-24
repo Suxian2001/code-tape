@@ -1,11 +1,15 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import {
+  CONTRACT_DIFF_FILTER,
   combineChangedFiles,
   evaluateGitNexusContract,
+  extractImpactSummary,
 } from './contract-rules.mjs';
 
 const GITNEXUS_VERSION = '1.6.5';
+const DEFAULT_LOCAL_ANALYZE_TIMEOUT_MS = 60_000;
+const DEFAULT_CI_ANALYZE_TIMEOUT_MS = 180_000;
 
 const command = process.argv[2] ?? 'check';
 
@@ -34,10 +38,7 @@ function runBootstrap() {
 }
 
 function runGitNexusContract({ mode }) {
-  console.log(`Running GitNexus ${GITNEXUS_VERSION} analyze --force --index-only (${mode})...`);
-  execFileSync('npx', ['--yes', `gitnexus@${GITNEXUS_VERSION}`, 'analyze', '--force', '--index-only'], {
-    stdio: 'inherit',
-  });
+  runGitNexusAnalyze(mode);
 
   const changedFiles = getChangedFiles(mode);
   const impactSummary = getImpactSummary();
@@ -55,10 +56,10 @@ function getChangedFiles(mode) {
     execFileSync('git', ['fetch', '--no-tags', '--depth=1', 'origin', process.env.GITHUB_BASE_REF], {
       stdio: 'inherit',
     });
-    return gitLines(['diff', '--name-only', '--diff-filter=ACMRTUXB', `origin/${process.env.GITHUB_BASE_REF}...HEAD`]);
+    return gitLines(['diff', '--name-only', `--diff-filter=${CONTRACT_DIFF_FILTER}`, `origin/${process.env.GITHUB_BASE_REF}...HEAD`]);
   }
   return combineChangedFiles(
-    gitLines(['diff', '--name-only', '--diff-filter=ACMRTUXB', 'HEAD']),
+    gitLines(['diff', '--name-only', `--diff-filter=${CONTRACT_DIFF_FILTER}`, 'HEAD']),
     gitLines(['ls-files', '--others', '--exclude-standard']),
   );
 }
@@ -74,12 +75,39 @@ function getImpactSummary() {
   return '';
 }
 
-function extractImpactSummary(text) {
-  const marker = /GitNexus\s*影响分析摘要/i;
-  const match = marker.exec(text);
-  if (!match) return text.trim();
-  const rest = text.slice(match.index + match[0].length);
-  return rest.replace(/^[:：\s#-]*/u, '').split(/\n#{1,6}\s|\n##\s/)[0].trim();
+function runGitNexusAnalyze(mode) {
+  const timeoutMs = resolveGitNexusAnalyzeTimeoutMs(mode);
+  console.log(
+    `Running GitNexus ${GITNEXUS_VERSION} analyze --force --index-only (${mode}, timeout ${timeoutMs}ms)...`,
+  );
+  try {
+    execFileSync('npx', ['--yes', `gitnexus@${GITNEXUS_VERSION}`, 'analyze', '--force', '--index-only'], {
+      stdio: 'inherit',
+      timeout: timeoutMs,
+    });
+  } catch (err) {
+    if (isTimeoutError(err)) {
+      throw new Error(
+        `GitNexus analyze timed out after ${timeoutMs}ms. Set GITNEXUS_ANALYZE_TIMEOUT_MS to a larger positive integer if this repo needs more time.`,
+      );
+    }
+    throw err;
+  }
+}
+
+function resolveGitNexusAnalyzeTimeoutMs(mode) {
+  const configured = process.env.GITNEXUS_ANALYZE_TIMEOUT_MS;
+  if (!configured) return mode === 'ci' ? DEFAULT_CI_ANALYZE_TIMEOUT_MS : DEFAULT_LOCAL_ANALYZE_TIMEOUT_MS;
+
+  const timeoutMs = Number(configured);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('GITNEXUS_ANALYZE_TIMEOUT_MS must be a positive number of milliseconds.');
+  }
+  return Math.trunc(timeoutMs);
+}
+
+function isTimeoutError(err) {
+  return err instanceof Error && (err.signal === 'SIGTERM' || err.code === 'ETIMEDOUT');
 }
 
 function gitLines(args) {
