@@ -1,5 +1,6 @@
 import { loadPrGuardContext } from './action-context.mjs';
 import {
+  findMaintainerMergeConfirmation,
   shouldDeferAutoMergeForForkReview,
   shouldWaitForRequiredChecks,
 } from './auto-merge-rules.mjs';
@@ -46,6 +47,17 @@ if (shouldDeferAutoMergeForForkReview(event, context.pr)) {
   process.exit(0);
 }
 
+const maintainerLogin = context.rawPull.base.repo?.owner?.login ?? context.pr.baseRepoFullName?.split('/')[0];
+const mergeConfirmer = findMaintainerMergeConfirmation({
+  comments: context.comments,
+  maintainerLogin,
+  latestCommitAt: context.pr.latestCommitAt,
+});
+if (!mergeConfirmer) {
+  console.log(`PR #${context.pr.number} is waiting for @${maintainerLogin} to comment 确认合并 after the latest commit`);
+  process.exit(0);
+}
+
 if (shouldWaitForMergeableState(context.rawPull.mergeable_state)) {
   console.log(`PR #${context.pr.number} mergeable_state is ${context.rawPull.mergeable_state}; waiting for branch protection and checks`);
   process.exit(0);
@@ -67,7 +79,7 @@ if (requiredCheckResult.wait) {
 
 await client.mergePull(context.pr.number, {
   commitTitle: `#${result.issueNumber} ${context.rawPull.title}`,
-  commitMessage: `Closes #${result.issueNumber}\n\nMerged automatically after workflow guard and CR passed.`,
+  commitMessage: `Closes #${result.issueNumber}\n\nMerged automatically after workflow guard, CR, and maintainer confirmation passed.`,
 });
 
 if (context.pr.headRepoFullName === context.pr.baseRepoFullName && context.pr.headRef !== 'main') {

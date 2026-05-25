@@ -18,6 +18,7 @@ import {
   resolvePullNumberFromEvent,
 } from '../workflows/action-context.mjs';
 import {
+  findMaintainerMergeConfirmation,
   shouldDeferAutoMergeForForkReview,
   shouldWaitForRequiredChecks,
 } from '../workflows/auto-merge-rules.mjs';
@@ -663,6 +664,34 @@ test('auto merge waits for required quality checks', () => {
       checkRuns: [{ name: 'Workflow Tests / quality', status: 'completed', conclusion: 'success' }],
     }).missing,
     ['Contract Guard / gitnexus-contract'],
+  );
+});
+
+test('auto merge requires maintainer confirmation after the latest commit', () => {
+  const latestCommitAt = '2026-05-22T10:00:00.000Z';
+  const comments = [
+    { user: { login: 'ceilf6', type: 'User' }, body: '确认合并', created_at: '2026-05-22T09:59:00.000Z' },
+    { user: { login: 'alice', type: 'User' }, body: '确认合并', created_at: '2026-05-22T10:10:00.000Z' },
+  ];
+
+  assert.equal(
+    findMaintainerMergeConfirmation({
+      comments,
+      maintainerLogin: 'ceilf6',
+      latestCommitAt,
+    }),
+    null,
+  );
+  assert.equal(
+    findMaintainerMergeConfirmation({
+      comments: [
+        ...comments,
+        { user: { login: 'ceilf6', type: 'User' }, body: '确认合并', created_at: '2026-05-22T10:20:00.000Z' },
+      ],
+      maintainerLogin: 'ceilf6',
+      latestCommitAt,
+    }),
+    'ceilf6',
   );
 });
 
