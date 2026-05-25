@@ -9,6 +9,7 @@ export type CameraPreviewProps = {
   draggable?: boolean;
   onPositionChange?(position: CameraPositionPayload): void;
   size?: "sm" | "md" | "lg";
+  className?: string;
 };
 
 const SIZE_MAP = {
@@ -30,6 +31,7 @@ export function CameraPreview(props: CameraPreviewProps) {
     draggable = false,
     onPositionChange,
     size = "md",
+    className = "z-50",
   } = props;
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -118,7 +120,7 @@ export function CameraPreview(props: CameraPreviewProps) {
       role="img"
       aria-label={stream ? "Camera preview" : "Camera preview placeholder"}
       style={style}
-      className={`absolute z-50 overflow-hidden rounded-full border border-border bg-surface-raised shadow-elevation-2 transition-opacity duration-200 ${sizeClass} ${enabled ? "opacity-100" : "opacity-0 pointer-events-none"} ${draggable ? "cursor-grab active:cursor-grabbing touch-none" : ""}`}
+      className={`absolute overflow-hidden rounded-full border border-border bg-surface-raised shadow-elevation-2 transition-opacity duration-200 ${sizeClass} ${enabled ? "opacity-100" : "opacity-0 pointer-events-none"} ${draggable ? "cursor-grab active:cursor-grabbing touch-none" : ""} ${className}`}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
