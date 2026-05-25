@@ -2,12 +2,21 @@
  * @vitest-environment jsdom
  */
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { CameraPreview } from "../CameraPreview";
 
 describe("CameraPreview", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    if (!window.PointerEvent) {
+      vi.stubGlobal("PointerEvent", MouseEvent);
+    }
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("renders placeholder when stream is null", () => {
@@ -46,6 +55,32 @@ describe("CameraPreview", () => {
     const video = screen.getByRole("img", { name: "Camera preview" }).querySelector("video");
     expect(video).toBeInTheDocument();
     expect(setSrcObject).toHaveBeenCalledWith(mockStream);
+  });
+
+  it("clears video srcObject on unmount", () => {
+    const MockMediaStream = class {} as typeof MediaStream;
+    global.MediaStream = MockMediaStream;
+    const mockStream = new MockMediaStream();
+
+    const setSrcObject = vi.fn();
+    Object.defineProperty(HTMLVideoElement.prototype, "srcObject", {
+      set: setSrcObject,
+      configurable: true,
+    });
+
+    const { unmount } = render(
+      <CameraPreview
+        stream={mockStream}
+        enabled={true}
+        position={{ x: 0, y: 0 }}
+      />
+    );
+
+    expect(setSrcObject).toHaveBeenLastCalledWith(mockStream);
+
+    unmount();
+
+    expect(setSrcObject).toHaveBeenLastCalledWith(null);
   });
 
   it("applies hidden classes when disabled", () => {
@@ -116,6 +151,9 @@ describe("CameraPreview", () => {
     // Stop drag
     fireEvent.pointerUp(preview, { clientX: 600, clientY: 600, pointerId: 1 });
 
-    expect(handleChange).toHaveBeenCalled();
+    expect(handleChange).toHaveBeenLastCalledWith({
+      x: 550 / 900,
+      y: 550 / 900,
+    });
   });
 });
