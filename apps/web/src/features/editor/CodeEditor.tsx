@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api";
 import type { RecordingLanguage } from "@/shared/recording-schema";
 
@@ -31,6 +31,7 @@ type MonacoEnvironmentHost = typeof globalThis & {
 let workerPromise: Promise<WorkerConstructors> | null = null;
 let monacoPromise: Promise<MonacoModule> | null = null;
 let themesDefined = false;
+let workersConfigured = false;
 
 function monacoTheme(theme: CodeEditorProps["theme"]): MonacoTheme {
   return theme === "dark" ? "code-tape-dark" : "code-tape-light";
@@ -40,14 +41,20 @@ function loadWorkers() {
   workerPromise ??= Promise.all([
     import("monaco-editor/esm/vs/editor/editor.worker?worker"),
     import("monaco-editor/esm/vs/language/typescript/ts.worker?worker"),
-  ]).then(([editorWorker, tsWorker]) => ({
-    editor: editorWorker.default,
-    typescript: tsWorker.default,
-  }));
+  ])
+    .then(([editorWorker, tsWorker]) => ({
+      editor: editorWorker.default,
+      typescript: tsWorker.default,
+    }))
+    .catch((error: unknown) => {
+      workerPromise = null;
+      throw error;
+    });
   return workerPromise;
 }
 
 function configureWorkers(workers: WorkerConstructors) {
+  if (workersConfigured) return;
   (globalThis as MonacoEnvironmentHost).MonacoEnvironment = {
     getWorker(_workerId, label) {
       if (label === "javascript" || label === "typescript") {
@@ -56,6 +63,7 @@ function configureWorkers(workers: WorkerConstructors) {
       return new workers.editor();
     },
   };
+  workersConfigured = true;
 }
 
 function defineThemes(monaco: MonacoModule) {
@@ -107,7 +115,10 @@ async function loadMonaco() {
     ]);
     defineThemes(monaco);
     return monaco;
-  })();
+  })().catch((error: unknown) => {
+    monacoPromise = null;
+    throw error;
+  });
   return monacoPromise;
 }
 
@@ -122,6 +133,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   const initialValueRef = useRef(initialValue);
   const latestPropsRef = useRef({ language, fontSize, theme });
   const onMountRef = useRef(onMount);
+  const [loadError, setLoadError] = useState<unknown>(null);
 
   latestPropsRef.current = { language, fontSize, theme };
   onMountRef.current = onMount;
@@ -136,6 +148,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
     void loadMonaco()
       .then((monaco) => {
         if (cancelled) return;
+        setLoadError(null);
         const currentProps = latestPropsRef.current;
         const model = monaco.editor.createModel(initialValueRef.current, currentProps.language);
         const editor = monaco.editor.create(host, {
@@ -155,6 +168,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
       })
       .catch((error: unknown) => {
         if (!cancelled) {
+          setLoadError(error);
           console.error("Failed to initialize Monaco editor", error);
         }
       });
@@ -187,11 +201,16 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(function
   }, [theme]);
 
   return (
-    <div
-      ref={hostRef}
-      aria-label="Code editor"
-      className="relative h-full min-h-[320px] w-full bg-surface"
-      data-code-editor
-    />
+    <div className="relative h-full min-h-[320px] w-full bg-surface" data-code-editor>
+      <div ref={hostRef} aria-label="Code editor" className="h-full min-h-[320px] w-full" />
+      {loadError ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-surface/90 p-4" role="alert">
+          <div className="max-w-sm rounded-md border border-border bg-surface-raised px-4 py-3 shadow-elevation-2">
+            <p className="text-sm font-medium text-foreground">Code editor failed to load.</p>
+            <p className="mt-1 text-xs text-muted">Refresh the page or reopen this view to retry.</p>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 });

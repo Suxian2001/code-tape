@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CodeEditorHandle } from "../CodeEditor";
@@ -56,7 +56,12 @@ const monacoMock = vi.hoisted(() => {
     editors.push(editor);
     return editor;
   });
-  const defineTheme = vi.fn();
+  const defineTheme = vi.fn(() => {
+    if (monacoMock.failDefineThemeCalls > 0) {
+      monacoMock.failDefineThemeCalls -= 1;
+      throw new Error("define theme failed");
+    }
+  });
   const setTheme = vi.fn();
   const setModelLanguage = vi.fn((model: MockModel, language: string) => {
     model.language = language;
@@ -65,6 +70,8 @@ const monacoMock = vi.hoisted(() => {
   return {
     MockEditorWorker,
     MockTsWorker,
+    failEditorWorkerImports: 0,
+    failDefineThemeCalls: 0,
     models,
     editors,
     editor: {
@@ -82,7 +89,13 @@ vi.mock("monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution
 vi.mock("monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution", () => ({}));
 vi.mock("monaco-editor/esm/vs/language/typescript/monaco.contribution", () => ({}));
 vi.mock("monaco-editor/esm/vs/editor/editor.worker?worker", () => ({
-  default: monacoMock.MockEditorWorker,
+  get default() {
+    if (monacoMock.failEditorWorkerImports > 0) {
+      monacoMock.failEditorWorkerImports -= 1;
+      throw new Error("editor worker import failed");
+    }
+    return monacoMock.MockEditorWorker;
+  },
 }));
 vi.mock("monaco-editor/esm/vs/language/typescript/ts.worker?worker", () => ({
   default: monacoMock.MockTsWorker,
@@ -90,8 +103,11 @@ vi.mock("monaco-editor/esm/vs/language/typescript/ts.worker?worker", () => ({
 
 describe("CodeEditor", () => {
   beforeEach(() => {
+    vi.resetModules();
     monacoMock.models.length = 0;
     monacoMock.editors.length = 0;
+    monacoMock.failEditorWorkerImports = 0;
+    monacoMock.failDefineThemeCalls = 0;
     monacoMock.editor.create.mockClear();
     monacoMock.editor.createModel.mockClear();
     monacoMock.editor.defineTheme.mockClear();
@@ -183,5 +199,58 @@ describe("CodeEditor", () => {
 
     expect(monacoMock.editors[0].disposed).toBe(true);
     expect(monacoMock.models[0].disposed).toBe(true);
+  });
+
+  it("does not rewrite MonacoEnvironment after workers are configured", async () => {
+    const { CodeEditor } = await import("../CodeEditor");
+    const first = render(
+      <CodeEditor language="javascript" initialValue="const first = 1;" fontSize={14} theme="dark" />,
+    );
+    await waitFor(() => expect(monacoMock.editor.create).toHaveBeenCalledTimes(1));
+    const environment = (globalThis as { MonacoEnvironment?: unknown }).MonacoEnvironment;
+    first.unmount();
+
+    render(<CodeEditor language="typescript" initialValue="const second = 2;" fontSize={14} theme="light" />);
+    await waitFor(() => expect(monacoMock.editor.create).toHaveBeenCalledTimes(2));
+
+    expect((globalThis as { MonacoEnvironment?: unknown }).MonacoEnvironment).toBe(environment);
+  });
+
+  it("shows a load error and retries after a Monaco initialization failure", async () => {
+    monacoMock.failDefineThemeCalls = 1;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { CodeEditor } = await import("../CodeEditor");
+    const first = render(
+      <CodeEditor language="javascript" initialValue="const first = 1;" fontSize={14} theme="dark" />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Code editor failed to load.");
+    expect(monacoMock.editor.create).not.toHaveBeenCalled();
+    first.unmount();
+
+    render(<CodeEditor language="javascript" initialValue="const retry = 1;" fontSize={14} theme="dark" />);
+    await waitFor(() => expect(monacoMock.editor.create).toHaveBeenCalledTimes(1));
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(consoleError).toHaveBeenCalledWith("Failed to initialize Monaco editor", expect.any(Error));
+    consoleError.mockRestore();
+  });
+
+  it("retries after a worker import failure", async () => {
+    monacoMock.failEditorWorkerImports = 1;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { CodeEditor } = await import("../CodeEditor");
+    const first = render(
+      <CodeEditor language="typescript" initialValue="const first = 1;" fontSize={14} theme="dark" />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Code editor failed to load.");
+    first.unmount();
+
+    render(<CodeEditor language="typescript" initialValue="const retry = 1;" fontSize={14} theme="dark" />);
+    await waitFor(() => expect(monacoMock.editor.create).toHaveBeenCalledTimes(1));
+
+    expect(consoleError).toHaveBeenCalledWith("Failed to initialize Monaco editor", expect.any(Error));
+    consoleError.mockRestore();
   });
 });
