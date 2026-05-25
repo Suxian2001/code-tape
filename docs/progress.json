@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-25T13:14:34Z",
+  "updatedAt": "2026-05-25T13:16:07Z",
   "students": {
     "ceilf6": {
       "activeIssue": 65,
@@ -26,7 +26,7 @@
       "totalScore": 13
     },
     "MINTPIPERAS": {
-      "activeIssue": null,
+      "activeIssue": 67,
       "completedIssues": [
         9,
         60
@@ -300,6 +300,20 @@
       "status": "claimed",
       "assignee": "ceilf6",
       "claimedAt": "2026-05-25T13:14:34Z",
+      "closedAt": null,
+      "mergedPr": null
+    },
+    "67": {
+      "number": 67,
+      "title": "[P0] mediaProducer 实装：媒体开关、权限告警与摄像头位置事件",
+      "score": 3,
+      "stack": [
+        "react",
+        "typescript"
+      ],
+      "status": "claimed",
+      "assignee": "MINTPIPERAS",
+      "claimedAt": "2026-05-25T13:16:07Z",
       "closedAt": null,
       "mergedPr": null
     }
