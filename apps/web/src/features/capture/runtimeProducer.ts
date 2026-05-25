@@ -35,9 +35,11 @@ export const createRuntimeProducer: CreateRuntimeProducer = (deps): RuntimeProdu
   let paused = false;
   let stopped = false;
   let disposed = false;
+  let running = false;
 
   const assertActive = () => {
     if (paused || stopped || disposed) throw new Error("RuntimeProducer is not active");
+    if (running) throw new Error("RuntimeProducer is already running");
   };
 
   const emitRunError = (payload: RunErrorPayload) => {
@@ -92,7 +94,7 @@ export const createRuntimeProducer: CreateRuntimeProducer = (deps): RuntimeProdu
 
   return {
     start() {
-      if (disposed) return;
+      if (stopped || disposed) return;
       paused = false;
       stopped = false;
     },
@@ -115,76 +117,80 @@ export const createRuntimeProducer: CreateRuntimeProducer = (deps): RuntimeProdu
     },
     async trigger(input): Promise<RuntimeProducerRunResult> {
       assertActive();
-
-      const runId = generateId("run");
-      bus.emit({
-        type: "run-start",
-        source: "runtime",
-        track: "runtime",
-        payload: {
-          language: input.language,
-          runtime: "iframe",
-          runId,
-        },
-      });
-
-      let compiled: CompileResult;
+      running = true;
       try {
-        compiled = await compiler.compile(input.source, input.language);
-      } catch (err) {
-        return emitCompileError(runId, { ok: false, phase: "transpile", ...errorInfo(err) });
-      }
-      if (!compiled.ok) return emitCompileError(runId, compiled);
-
-      let result: IframeRunResult;
-      try {
-        result = await runtime.run({
-          runId,
-          compiledCode: compiled.code,
-          timeoutMs: RUNTIME_TIMEOUT_MS,
-        });
-      } catch (err) {
-        return emitRuntimeThrownError(runId, err);
-      }
-
-      if (result.status === "complete") {
+        const runId = generateId("run");
         bus.emit({
-          type: "run-output",
+          type: "run-start",
           source: "runtime",
           track: "runtime",
           payload: {
+            language: input.language,
+            runtime: "iframe",
             runId,
-            stdout: result.stdout,
-            stderr: result.stderr,
-            previewHtml: result.previewHtml,
-            status: "success",
           },
         });
-        return result;
-      }
 
-      if (result.status === "timeout") {
+        let compiled: CompileResult;
+        try {
+          compiled = await compiler.compile(input.source, input.language);
+        } catch (err) {
+          return emitCompileError(runId, { ok: false, phase: "transpile", ...errorInfo(err) });
+        }
+        if (!compiled.ok) return emitCompileError(runId, compiled);
+
+        let result: IframeRunResult;
+        try {
+          result = await runtime.run({
+            runId,
+            compiledCode: compiled.code,
+            timeoutMs: RUNTIME_TIMEOUT_MS,
+          });
+        } catch (err) {
+          return emitRuntimeThrownError(runId, err);
+        }
+
+        if (result.status === "complete") {
+          bus.emit({
+            type: "run-output",
+            source: "runtime",
+            track: "runtime",
+            payload: {
+              runId,
+              stdout: result.stdout,
+              stderr: result.stderr,
+              previewHtml: result.previewHtml,
+              status: "success",
+            },
+          });
+          return result;
+        }
+
+        if (result.status === "timeout") {
+          emitRunError({
+            runId,
+            phase: "runtime",
+            message: "runtime-timeout",
+            stdout: result.stdout,
+            stderr: result.stderr,
+            previewHtml: null,
+          });
+          return result;
+        }
+
         emitRunError({
           runId,
           phase: "runtime",
-          message: "runtime-timeout",
+          message: result.message,
+          stack: result.stack,
           stdout: result.stdout,
           stderr: result.stderr,
           previewHtml: null,
         });
         return result;
+      } finally {
+        running = false;
       }
-
-      emitRunError({
-        runId,
-        phase: "runtime",
-        message: result.message,
-        stack: result.stack,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        previewHtml: null,
-      });
-      return result;
     },
   };
 };

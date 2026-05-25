@@ -212,4 +212,61 @@ describe("createRuntimeProducer", () => {
       expect(bus.drain()).toEqual([]);
     },
   );
+
+  it("keeps stop terminal even if start is called again", async () => {
+    const { bus, compile, producer, run } = setup();
+    producer.stop();
+    producer.start();
+
+    await expect(producer.trigger({ language: "javascript", source: "1" })).rejects.toThrow(
+      "RuntimeProducer is not active",
+    );
+
+    expect(compile).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(bus.drain()).toEqual([]);
+  });
+
+  it("rejects overlapping trigger calls without emitting a second run", async () => {
+    let runCount = 0;
+    let resolveFirstRun: () => void = () => {
+      throw new Error("first run was not started");
+    };
+    const { bus, compile, producer, run } = setup({
+      run: (input) => {
+        runCount += 1;
+        if (runCount > 1) {
+          return Promise.resolve({
+            runId: input.runId,
+            status: "complete",
+            previewHtml: "<body>second</body>",
+            stdout: [],
+            stderr: [],
+          });
+        }
+        return new Promise<IframeRunResult>((resolve) => {
+          resolveFirstRun = () =>
+            resolve({
+              runId: input.runId,
+              status: "complete",
+              previewHtml: "<body>done</body>",
+              stdout: [],
+              stderr: [],
+            });
+        });
+      },
+    });
+
+    const first = producer.trigger({ language: "javascript", source: "first" });
+    await expect(producer.trigger({ language: "javascript", source: "second" })).rejects.toThrow(
+      "RuntimeProducer is already running",
+    );
+
+    expect(compile).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(1);
+    resolveFirstRun?.();
+    await first;
+
+    expect(bus.drain().map((event) => event.type)).toEqual(["run-start", "run-output"]);
+  });
 });
