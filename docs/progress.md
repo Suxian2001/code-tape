@@ -2,7 +2,7 @@
 
 > 本文件由 GitHub Actions 自动生成，请勿手动修改。
 
-更新时间：2026-05-25T03:55:02Z
+更新时间：2026-05-25T10:31:09Z
 
 ## 当前任务
 
@@ -12,7 +12,6 @@
 | yangchloeeeee | #57 [P0] RecorderControls 录制控制条 UI | 2026-05-25 02:42:39Z |
 | cecilyw | #58 [P0] ReplayControls 播放控制条基础交互 | 2026-05-25 02:48:02Z |
 | JunMang01 | #59 [P0] RecordingLibraryPage 列表 UI 与导入导出入口 | 2026-05-25 02:50:19Z |
-| MINTPIPERAS | #60 [P0] CameraPreview 悬浮预览 UI | 2026-05-25 02:22:26Z |
 
 ## 积分总览
 
@@ -21,14 +20,15 @@
 | cecilyw | 0.00 | 0.00 | 0.00 | 0.00 |
 | ceilf6 | 9.00 | 1.00 | 0.00 | 10.00 |
 | JunMang01 | 0.75 | 0.00 | 0.00 | 0.75 |
-| MINTPIPERAS | 1.75 | 0.75 | 0.00 | 2.50 |
-| Suxian2001 | 1.75 | 0.00 | 0.00 | 1.75 |
+| MINTPIPERAS | 4.00 | 0.75 | 0.00 | 4.75 |
+| Suxian2001 | 1.75 | 0.75 | 0.00 | 2.50 |
 | yangchloeeeee | 2.50 | 2.50 | 0.00 | 5.00 |
 
 ## 最近流水
 
 | 时间 | 类型 | Issue | PR | 变更 |
 | --- | --- | --- | --- | --- |
+| 2026-05-25 10:31:09Z | feature_merge | #60 | #62 | MINTPIPERAS +2.25, Suxian2001 +0.75 |
 | 2026-05-25 03:39:39Z | feature_merge | #55 | #61 | ceilf6 +3.75, yangchloeeeee +1.25 |
 | 2026-05-23 14:25:58Z | manual_development_bonus | #54 | - | MINTPIPERAS +1.00 (Discussions #27 #28 #31 #20 #25 建言献策贡献奖励) |
 | 2026-05-23 14:25:58Z | manual_development_bonus | #54 | - | Suxian2001 +1.00 (Discussions #27 #28 #31 #20 #25 建言献策贡献奖励) |
