@@ -484,4 +484,69 @@ describe("ReplayPage", () => {
     play.mockRestore();
     pause.mockRestore();
   });
+
+  it.each([1_000, 7_000])(
+    "pauses and hides recorded media outside the active media segment at %ims",
+    async (timelineTimeMs) => {
+      const originalMedia = replayPageMock.packageData.media;
+      replayPageMock.packageData.media = {
+        ...originalMedia!,
+        timelineOffsetMs: 5_000,
+        durationMs: 1_000,
+      };
+      replayPageMock.schedulerState.status = "playing";
+      replayPageMock.schedulerState.timelineTimeMs = timelineTimeMs;
+      const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+      const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+      if (typeof URL.createObjectURL !== "function") {
+        Object.defineProperty(URL, "createObjectURL", {
+          writable: true,
+          value: vi.fn(() => "blob:replay-media"),
+        });
+      }
+      if (typeof URL.revokeObjectURL !== "function") {
+        Object.defineProperty(URL, "revokeObjectURL", {
+          writable: true,
+          value: vi.fn(),
+        });
+      }
+      const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:offset-media");
+      const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+      const { ReplayPage } = await import("../ReplayPage");
+
+      try {
+        render(<ReplayPage />);
+        await waitFor(() => expect(replayPageMock.scheduler.load).toHaveBeenCalledWith(replayPageMock.packageData));
+
+        act(() => {
+          replayPageMock.onTick?.({
+            editor: {
+              code: "",
+              language: "javascript",
+              cursor: null,
+              selection: null,
+              scrollTop: 0,
+              scrollLeft: 0,
+              fontSize: 14,
+              theme: "dark",
+            },
+            pointer: null,
+            media: { microphoneEnabled: true, cameraEnabled: true, cameraPosition: { x: 0.8, y: 0.75 } },
+            runtime: { status: "idle", stdout: [], stderr: [], previewHtml: null, errorMessage: null },
+          });
+        });
+
+        const video = screen.getByLabelText("录制摄像头视频");
+        await waitFor(() => expect(pause).toHaveBeenCalled());
+        expect(play).not.toHaveBeenCalled();
+        expect(video.parentElement).toHaveClass("sr-only");
+      } finally {
+        replayPageMock.packageData.media = originalMedia;
+        createObjectURL.mockRestore();
+        revokeObjectURL.mockRestore();
+        play.mockRestore();
+        pause.mockRestore();
+      }
+    },
+  );
 });

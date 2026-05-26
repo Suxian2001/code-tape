@@ -315,7 +315,6 @@ function RecordedMediaOverlay({
   const [src, setSrc] = useState<string | null>(null);
   const hasMedia = Boolean(media && mediaBlob);
   const hasCamera = Boolean(media?.hasCamera);
-  const showCamera = hasMedia && hasCamera && mediaState.cameraEnabled;
   const mediaAdapter = useMemo(() => {
     if (!media) return null;
     return createMediaClockAdapter({
@@ -338,6 +337,9 @@ function RecordedMediaOverlay({
       },
     });
   }, [media, videoRef]);
+  const activeMediaTimeMs = mediaAdapter?.timelineToMediaTime(schedulerState.timelineTimeMs) ?? null;
+  const isMediaSegmentActive = hasMedia && activeMediaTimeMs !== null;
+  const showCamera = isMediaSegmentActive && hasCamera && mediaState.cameraEnabled;
 
   useEffect(() => {
     if (!mediaBlob || typeof URL.createObjectURL !== "function") {
@@ -364,7 +366,11 @@ function RecordedMediaOverlay({
     const video = videoRef.current;
     if (!video || !mediaAdapter) return;
     const targetMs = mediaAdapter.timelineToMediaTime(schedulerState.timelineTimeMs);
-    if (targetMs !== null && Math.abs(video.currentTime * 1000 - targetMs) > MEDIA_DRIFT_THRESHOLD_MS) {
+    if (targetMs === null) {
+      video.pause();
+      return;
+    }
+    if (Math.abs(video.currentTime * 1000 - targetMs) > MEDIA_DRIFT_THRESHOLD_MS) {
       video.currentTime = targetMs / 1000;
     }
     if (schedulerState.status === "playing") {
