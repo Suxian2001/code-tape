@@ -35,7 +35,12 @@ export type ReplayMediaClockAdapter = MediaClockAdapter & {
  */
 export function createMediaClockAdapter(options: MediaClockAdapterOptions): ReplayMediaClockAdapter {
   const segments = options.segments.slice().sort((a, b) => a.timelineStartMs - b.timelineStartMs);
-  let pendingSeek: { segment: MediaTimelineSegment; mediaTimeMs: number } | null = null;
+  let seekGeneration = 0;
+  let pendingSeek: {
+    segment: MediaTimelineSegment;
+    mediaTimeMs: number;
+    generation: number;
+  } | null = null;
 
   const findSegmentForTimeline = (targetMs: number): MediaTimelineSegment | null => {
     let lo = 0;
@@ -72,11 +77,12 @@ export function createMediaClockAdapter(options: MediaClockAdapterOptions): Repl
       return null;
     },
     async seek(targetMs) {
+      seekGeneration += 1;
       const seg = findSegmentForTimeline(targetMs);
       if (!seg) return;
       const mediaTimeMs = seg.mediaStartMs + (targetMs - seg.timelineStartMs);
       if (!metadataReady()) {
-        pendingSeek = { segment: seg, mediaTimeMs };
+        pendingSeek = { segment: seg, mediaTimeMs, generation: seekGeneration };
         return;
       }
       pendingSeek = null;
@@ -96,8 +102,15 @@ export function createMediaClockAdapter(options: MediaClockAdapterOptions): Repl
     async flushPendingSeek() {
       if (!pendingSeek || !metadataReady()) return;
       const currentPending = pendingSeek;
-      await runSeek(currentPending.segment, currentPending.mediaTimeMs);
-      if (pendingSeek === currentPending) pendingSeek = null;
+      pendingSeek = null;
+      try {
+        await runSeek(currentPending.segment, currentPending.mediaTimeMs);
+      } catch (error) {
+        if (pendingSeek === null && seekGeneration === currentPending.generation) {
+          pendingSeek = currentPending;
+        }
+        throw error;
+      }
     },
   };
 }

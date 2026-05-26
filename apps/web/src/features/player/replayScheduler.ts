@@ -121,6 +121,20 @@ export function createReplayScheduler(options: ReplaySchedulerOptions = {}): Rep
     schedulerState = { ...schedulerState, ...patch };
     publish();
   };
+  const resetMediaBlock = () => {
+    mediaBlockedSinceMs = null;
+    mediaFallbackNotified = false;
+  };
+  const reportMediaOperationError = (error: unknown) => {
+    console.warn("[replay-scheduler] media operation failed:", error);
+  };
+  const runMediaOperation = (operation: () => Promise<void>) => {
+    try {
+      void operation().catch(reportMediaOperationError);
+    } catch (error) {
+      reportMediaOperationError(error);
+    }
+  };
 
   const recomputeFromTime = (targetMs: number): { state: ReplayStableState; lastSeq: number } => {
     const snapshot = findSnapshotAtMost(index.snapshotsByTime, targetMs);
@@ -188,10 +202,13 @@ export function createReplayScheduler(options: ReplaySchedulerOptions = {}): Rep
       };
     }
 
-    void mediaAdapter.flushPendingSeek();
-    const mediaCurrentTimeSec = mediaAdapter.getCurrentTimeSec();
+    const readyMediaAdapter = mediaAdapter;
+    runMediaOperation(() => readyMediaAdapter.flushPendingSeek());
+    const mediaCurrentTimeSec = readyMediaAdapter.getCurrentTimeSec();
     const mediaTimelineMs =
-      mediaCurrentTimeSec === null ? null : mediaAdapter.mediaToTimelineTime(mediaCurrentTimeSec);
+      mediaCurrentTimeSec === null
+        ? null
+        : readyMediaAdapter.mediaToTimelineTime(mediaCurrentTimeSec);
 
     if (mediaTimelineMs === null) {
       return {
@@ -205,7 +222,7 @@ export function createReplayScheduler(options: ReplaySchedulerOptions = {}): Rep
 
     const driftMs = clockTimeMs - mediaTimelineMs;
     if (Math.abs(driftMs) > MEDIA_DRIFT_THRESHOLD_MS) {
-      void mediaAdapter.seek(clockTimeMs);
+      runMediaOperation(() => readyMediaAdapter.seek(clockTimeMs));
     }
 
     return {
@@ -244,6 +261,19 @@ export function createReplayScheduler(options: ReplaySchedulerOptions = {}): Rep
     if (!pkg) return;
     const frame = resolveFrame();
     const now = frame.timelineTimeMs;
+    if (frame.shouldAdvanceEvents && now < schedulerState.timelineTimeMs) {
+      const { state, lastSeq } = recomputeFromTime(now);
+      stableState = state;
+      updateState({
+        timelineTimeMs: Math.max(0, now),
+        lastAppliedSeq: lastSeq,
+        mediaStatus: frame.mediaStatus,
+        driftMs: frame.driftMs,
+        status: frame.status,
+      });
+      options.onTick?.(stableState, [], now);
+      return;
+    }
     if (!frame.shouldAdvanceEvents || now <= schedulerState.timelineTimeMs) {
       updateState({
         timelineTimeMs: Math.max(0, now),
@@ -278,10 +308,13 @@ export function createReplayScheduler(options: ReplaySchedulerOptions = {}): Rep
 
   return {
     setMediaAdapter(adapter) {
+      const adapterChanged = adapter !== mediaAdapter;
       mediaAdapter = adapter;
+      if (adapterChanged) resetMediaBlock();
+      adapter?.setRate(schedulerState.playbackRate);
       const mediaStatus = currentMediaStatus();
-      if (mediaStatus === "ready") {
-        void mediaAdapter?.flushPendingSeek();
+      if (mediaStatus === "ready" && adapter) {
+        runMediaOperation(() => adapter.flushPendingSeek());
       }
       updateState({ mediaStatus });
     },
@@ -292,6 +325,7 @@ export function createReplayScheduler(options: ReplaySchedulerOptions = {}): Rep
       stableState = cloneState(initial);
       tickStrategy.stop();
       driving = false;
+      resetMediaBlock();
       updateState({
         status: "ready",
         timelineTimeMs: 0,

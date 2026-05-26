@@ -311,6 +311,35 @@ describe("createReplayScheduler", () => {
     expect(latest().driftMs).toBe(50);
   });
 
+  it("rolls stable state back when media currentTime moves backward", async () => {
+    let wall = 0;
+    let mediaCurrentTimeSec = 0;
+    const clock = createTimelineClock({ nowProvider: () => wall });
+    const scheduler = createReplayScheduler({
+      clock,
+      mediaAdapter: testMediaAdapter({
+        currentTimeSec: () => mediaCurrentTimeSec,
+      }) as never,
+      tickStrategy: { start: () => {}, stop: () => {} },
+    });
+    const latest = watchState(scheduler);
+    await scheduler.load(makePkg([content(1, 1000, "after-event")], [], 5000, true));
+
+    scheduler.play();
+    wall = 1200;
+    mediaCurrentTimeSec = 1.2;
+    scheduler.tick();
+    expect(scheduler.getStableState().editor.code).toBe("after-event");
+
+    wall = 500;
+    mediaCurrentTimeSec = 0.5;
+    scheduler.tick();
+
+    expect(latest().timelineTimeMs).toBe(500);
+    expect(latest().lastAppliedSeq).toBe(0);
+    expect(scheduler.getStableState().editor.code).toBe("");
+  });
+
   it("falls back to the timeline clock when package media is missing", async () => {
     let wall = 0;
     const clock = createTimelineClock({ nowProvider: () => wall });
@@ -354,6 +383,47 @@ describe("createReplayScheduler", () => {
     expect(latest().timelineTimeMs).toBe(1000);
     expect(latest().driftMs).toBe(600);
     expect(seek).toHaveBeenCalledWith(1600);
+  });
+
+  it("handles rejected async media operations during ready ticks", async () => {
+    let wall = 0;
+    let mediaCurrentTimeSec = 0;
+    const flushError = new Error("flush failed");
+    const seekError = new Error("seek failed");
+    const seek = vi.fn(async () => {
+      throw seekError;
+    });
+    const adapter = testMediaAdapter({
+      currentTimeSec: () => mediaCurrentTimeSec,
+      seek,
+    });
+    adapter.flushPendingSeek = vi.fn(async () => {
+      throw flushError;
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const clock = createTimelineClock({ nowProvider: () => wall });
+    const scheduler = createReplayScheduler({
+      clock,
+      mediaAdapter: adapter as never,
+      tickStrategy: { start: () => {}, stop: () => {} },
+    });
+
+    await scheduler.load(makePkg([], [], 5000, true));
+    scheduler.play();
+    wall = 500;
+    mediaCurrentTimeSec = 0;
+    scheduler.tick();
+    await Promise.resolve();
+
+    try {
+      expect(warn).toHaveBeenCalledWith(
+        "[replay-scheduler] media operation failed:",
+        flushError,
+      );
+      expect(warn).toHaveBeenCalledWith("[replay-scheduler] media operation failed:", seekError);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("enters buffering and stops applying events after media is stalled for 500ms", async () => {
@@ -410,6 +480,35 @@ describe("createReplayScheduler", () => {
     expect(onMediaFallbackReady).toHaveBeenCalledTimes(1);
   });
 
+  it("resets stalled media timers when loading a new package", async () => {
+    const wall = 0;
+    let schedulerWall = 0;
+    const clock = createTimelineClock({ nowProvider: () => wall });
+    const scheduler = createReplayScheduler({
+      clock,
+      mediaAdapter: testMediaAdapter({
+        currentTimeSec: () => 0,
+        status: "stalled",
+      }) as never,
+      tickStrategy: { start: () => {}, stop: () => {} },
+      wallNow: () => schedulerWall,
+    } as never);
+    const latest = watchState(scheduler);
+
+    await scheduler.load(makePkg([], [], 5000, true));
+    scheduler.play();
+    scheduler.tick();
+    schedulerWall = 700;
+    scheduler.tick();
+    expect(latest().status).toBe("buffering");
+
+    await scheduler.load(makePkg([], [], 5000, true));
+    scheduler.play();
+    scheduler.tick();
+
+    expect(latest().status).toBe("playing");
+  });
+
   it("flushes a pending media seek when metadata becomes ready while replay is paused", async () => {
     let metadataReady = false;
     const seekHandler = vi.fn();
@@ -440,5 +539,23 @@ describe("createReplayScheduler", () => {
     scheduler.setMediaAdapter(adapter);
 
     expect(seekHandler).toHaveBeenCalledWith(adapter.segments[0], 1800);
+  });
+
+  it("applies the current playback rate when a media adapter is attached", async () => {
+    const setRate = vi.fn();
+    const adapter = testMediaAdapter({
+      currentTimeSec: () => 0,
+      status: "ready",
+    });
+    adapter.setRate = setRate;
+    const scheduler = createReplayScheduler({
+      tickStrategy: { start: () => {}, stop: () => {} },
+    });
+    await scheduler.load(makePkg([], [], 5000, true));
+
+    scheduler.setRate(2);
+    scheduler.setMediaAdapter(adapter as never);
+
+    expect(setRate).toHaveBeenCalledWith(2);
   });
 });

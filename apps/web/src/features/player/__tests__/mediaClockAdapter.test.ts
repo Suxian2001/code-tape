@@ -49,4 +49,29 @@ describe("createMediaClockAdapter", () => {
 
     expect(seek).toHaveBeenCalledWith(segments[1], 1300);
   });
+
+  it("does not flush the same pending seek twice while an async seek is in flight", async () => {
+    let metadataReady = false;
+    let resolveSeek!: () => void;
+    const seek = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSeek = resolve;
+        }),
+    );
+    const adapter = createMediaClockAdapter({
+      segments,
+      seekHandler: seek,
+      metadataReadyProvider: () => metadataReady,
+    });
+
+    await adapter.seek(1800);
+    metadataReady = true;
+    const firstFlush = adapter.flushPendingSeek();
+    const secondFlush = adapter.flushPendingSeek();
+
+    expect(seek).toHaveBeenCalledTimes(1);
+    resolveSeek();
+    await Promise.all([firstFlush, secondFlush]);
+  });
 });
