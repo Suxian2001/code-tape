@@ -1,0 +1,298 @@
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ReplaySchedulerState } from "@/shared/recording-schema";
+import { ReplayControls, type ReplayControlsProps } from "../ReplayControls";
+
+type SliderRootProps = {
+  value?: number[];
+  min?: number;
+  max?: number;
+  step?: number;
+  disabled?: boolean;
+  "aria-label"?: string;
+  onValueChange?: (values: number[]) => void;
+  onValueCommit?: (values: number[]) => void;
+};
+
+vi.mock("@radix-ui/react-slider", () => ({
+  Root({
+    value = [0],
+    min = 0,
+    max = 100,
+    step = 1,
+    disabled,
+    "aria-label": ariaLabel,
+    onValueChange,
+    onValueCommit,
+  }: SliderRootProps) {
+    const currentValue = value[0] ?? min;
+    return (
+      <input
+        aria-label={ariaLabel}
+        type="range"
+        value={currentValue}
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
+        onChange={(event) => onValueChange?.([Number(event.currentTarget.value)])}
+        onMouseUp={(event) => onValueCommit?.([Number(event.currentTarget.value)])}
+      />
+    );
+  },
+  Track() {
+    return null;
+  },
+  Range() {
+    return null;
+  },
+  Thumb() {
+    return null;
+  },
+}));
+
+function state(
+  status: ReplaySchedulerState["status"],
+  patch: Partial<ReplaySchedulerState> = {},
+): ReplaySchedulerState {
+  return {
+    status,
+    timelineTimeMs: 0,
+    playbackRate: 1,
+    lastAppliedSeq: 0,
+    mediaStatus: "none",
+    driftMs: 0,
+    ...patch,
+  };
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+function renderControls(overrides: Partial<ReplayControlsProps> = {}) {
+  const props: ReplayControlsProps = {
+    state: state("ready"),
+    durationMs: 120_000,
+    onPlayPause: vi.fn(),
+    onPlay: vi.fn(),
+    onSeek: vi.fn(),
+    onRate: vi.fn(),
+    volume: 80,
+    muted: false,
+    onVolume: vi.fn(),
+    onMuted: vi.fn(),
+    ...overrides,
+  };
+  return {
+    props,
+    ...render(<ReplayControls {...props} />),
+  };
+}
+
+function openHoverPopover(buttonName: string | RegExp) {
+  const trigger = screen.getByRole("button", { name: buttonName });
+  fireEvent.mouseEnter(trigger.parentElement as HTMLElement);
+  act(() => {
+    vi.advanceTimersByTime(200);
+  });
+}
+
+describe("ReplayControls", () => {
+  it("renders time display with font-mono", () => {
+    renderControls({ durationMs: 123_456 });
+    const timeElements = screen.getAllByText(/02:03|02:04/);
+    expect(timeElements.length).toBeGreaterThan(0);
+  });
+
+  it("calls onPlayPause when play/pause button is clicked", () => {
+    const { props } = renderControls({ state: state("ready") });
+    const playButton = screen.getByRole("button", { name: /播放|暂停/ });
+    fireEvent.click(playButton);
+    expect(props.onPlayPause).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables play/pause button in loading/seeking/error states", () => {
+    const { rerender, props } = renderControls({ state: state("loading") });
+    expect(screen.getByRole("button", { name: /播放|暂停/ })).toBeDisabled();
+
+    rerender(<ReplayControls {...props} state={state("seeking")} />);
+    expect(screen.getByRole("button", { name: /播放|暂停/ })).toBeDisabled();
+
+    rerender(<ReplayControls {...props} state={state("error")} />);
+    expect(screen.getByRole("button", { name: /播放|暂停/ })).toBeDisabled();
+  });
+
+  it("calls onMuted when mute toggle is pressed", () => {
+    const { props } = renderControls({ muted: false });
+    const muteButton = screen.getByRole("button", { name: /静音|取消静音/ });
+    fireEvent.click(muteButton);
+    expect(props.onMuted).toHaveBeenCalledTimes(1);
+  });
+
+  it("clamps timeline time within 0 and duration", () => {
+    renderControls({
+      state: state("playing", { timelineTimeMs: -1000 }),
+      durationMs: 100_000,
+    });
+    const timeElements = screen.getAllByText(/00:00/);
+    expect(timeElements.length).toBeGreaterThan(0);
+  });
+
+  it("handles zero duration gracefully", () => {
+    renderControls({ durationMs: 0 });
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeDisabled();
+    expect(screen.getAllByText("00:00")).toHaveLength(2);
+  });
+
+  it.each(["loading", "seeking", "error"] as const)(
+    "disables progress seeking while status is %s",
+    (status) => {
+      const onSeek = vi.fn();
+      const onPlay = vi.fn();
+      renderControls({
+        state: state(status, { timelineTimeMs: 20_000 }),
+        durationMs: 100_000,
+        onSeek,
+        onPlay,
+      });
+
+      const progressSlider = screen.getByRole("slider", { name: "播放进度" });
+      expect(progressSlider).toBeDisabled();
+
+      fireEvent.change(progressSlider, { target: { value: "25" } });
+      fireEvent.mouseUp(progressSlider);
+
+      expect(onSeek).not.toHaveBeenCalled();
+      expect(onPlay).not.toHaveBeenCalled();
+    },
+  );
+
+  describe("handleSliderCommit logic", () => {
+    it("updates preview locally while dragging and seeks only on commit", async () => {
+      const onSeek = vi.fn();
+      const onPlay = vi.fn();
+      renderControls({ durationMs: 100_000, onSeek, onPlay });
+
+      const progressSlider = screen.getByRole("slider", { name: "播放进度" });
+      fireEvent.change(progressSlider, { target: { value: "25" } });
+
+      expect(screen.getByText("00:25")).toBeInTheDocument();
+      expect(onSeek).not.toHaveBeenCalled();
+
+      fireEvent.mouseUp(progressSlider);
+
+      await waitFor(() => expect(onSeek).toHaveBeenCalledWith(25_000));
+      expect(onPlay).toHaveBeenCalledTimes(1);
+    });
+
+    it("waits for async seek before auto-playing", async () => {
+      let resolveSeek: () => void = () => {};
+      const onSeek = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveSeek = resolve;
+          }),
+      );
+      const onPlay = vi.fn();
+      renderControls({ durationMs: 120_000, onSeek, onPlay });
+
+      const progressSlider = screen.getByRole("slider", { name: "播放进度" });
+      fireEvent.change(progressSlider, { target: { value: "50" } });
+      fireEvent.mouseUp(progressSlider);
+
+      expect(onSeek).toHaveBeenCalledWith(60_000);
+      expect(onPlay).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveSeek();
+      });
+
+      expect(onPlay).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("volume control logic", () => {
+    it("renders muted volume as zero in text and slider position", () => {
+      vi.useFakeTimers();
+      renderControls({ muted: true, volume: 80 });
+
+      openHoverPopover("取消静音");
+
+      expect(screen.getByText("0")).toBeInTheDocument();
+      expect(screen.getByRole("slider", { name: "音量" })).toHaveValue("0");
+    });
+
+    it("unmutes when volume is raised while muted", () => {
+      const onMuted = vi.fn();
+      const onVolume = vi.fn();
+      vi.useFakeTimers();
+      renderControls({ muted: true, volume: 0, onMuted, onVolume });
+
+      openHoverPopover("取消静音");
+      fireEvent.change(screen.getByRole("slider", { name: "音量" }), { target: { value: "35" } });
+
+      expect(onMuted).toHaveBeenCalledWith(false);
+      expect(onVolume).toHaveBeenCalledWith(35);
+    });
+
+    it("mutes when volume reaches zero", () => {
+      const onMuted = vi.fn();
+      const onVolume = vi.fn();
+      vi.useFakeTimers();
+
+      renderControls({ muted: false, volume: 50, onMuted, onVolume });
+      openHoverPopover("静音");
+      fireEvent.change(screen.getByRole("slider", { name: "音量" }), { target: { value: "0" } });
+
+      expect(onMuted).toHaveBeenCalledWith(true);
+      expect(onVolume).toHaveBeenCalledWith(0);
+    });
+
+    it("does not submit duplicate volume updates on commit", () => {
+      const onMuted = vi.fn();
+      const onVolume = vi.fn();
+      vi.useFakeTimers();
+
+      renderControls({ muted: false, volume: 50, onMuted, onVolume });
+      openHoverPopover("静音");
+      const volumeSlider = screen.getByRole("slider", { name: "音量" });
+      fireEvent.change(volumeSlider, { target: { value: "70" } });
+      fireEvent.mouseUp(volumeSlider);
+
+      expect(onMuted).not.toHaveBeenCalled();
+      expect(onVolume).toHaveBeenCalledOnce();
+      expect(onVolume).toHaveBeenCalledWith(70);
+    });
+  });
+
+  describe("playback rate control", () => {
+    it("calls onRate when a playback rate is selected", () => {
+      vi.useFakeTimers();
+      const { props } = renderControls();
+
+      openHoverPopover("倍速");
+
+      fireEvent.click(screen.getByRole("option", { name: "1.5x" }));
+
+      expect(props.onRate).toHaveBeenCalledWith(1.5);
+    });
+
+    it("keeps the rate popover open when moving from trigger to portal content", () => {
+      vi.useFakeTimers();
+      renderControls();
+      const rateButton = screen.getByLabelText("倍速");
+
+      openHoverPopover("倍速");
+
+      const rateList = screen.getByRole("listbox");
+      fireEvent.mouseLeave(rateButton.parentElement as HTMLElement);
+      fireEvent.mouseEnter(rateList.parentElement as HTMLElement);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      expect(screen.getByRole("option", { name: "1.5x" })).toBeInTheDocument();
+    });
+  });
+});
