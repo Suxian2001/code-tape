@@ -6,6 +6,7 @@ import type {
   RecordingControllerDeps,
   RecordingControllerState,
   RecordingControllerStatus,
+  RecordingEvent,
   RecordingPackageV1,
   RecordingSnapshot,
   RecordStartPayload,
@@ -197,7 +198,7 @@ export function createRecordingController(options: RecordingControllerOptions): 
           transitionTo("processing", { durationMs: pendingPackageSave.pkg.meta.durationMs });
         }
 
-        await persistPackage(repository, pendingPackageSave);
+        pendingPackageSave = await persistPackage(repository, packageBuilder, pendingPackageSave);
 
         transitionTo("completed");
         const pkg = pendingPackageSave.pkg;
@@ -246,8 +247,10 @@ export function createRecordingController(options: RecordingControllerOptions): 
 
 async function persistPackage(
   repository: RecordingControllerDeps["repository"],
+  packageBuilder: RecordingControllerDeps["packageBuilder"],
   pending: PendingPackageSave,
-): Promise<void> {
+): Promise<PendingPackageSave> {
+  await assertSufficientQuota(repository, pending);
   const { pkg, mediaBlob } = pending;
   const saveResult = await repository.saveDraft({
     meta: pkg.meta,
@@ -262,6 +265,30 @@ async function persistPackage(
     mediaBlob,
   });
   if (!saveResult.ok) {
+    if (saveResult.reason === "media-write-failed" && mediaBlob) {
+      const eventOnlyPending = await buildMediaMissingFallback(packageBuilder, pending, saveResult.message);
+      await assertSufficientQuota(repository, eventOnlyPending);
+      const eventOnlySave = await repository.saveDraft({
+        meta: eventOnlyPending.pkg.meta,
+        events: eventOnlyPending.pkg.events,
+        snapshots: eventOnlyPending.pkg.snapshots,
+        indexes: eventOnlyPending.pkg.indexes ?? {
+          generatedAt: new Date().toISOString(),
+          eventsByType: {} as Record<string, number[]>,
+          snapshotSeqsByTime: [],
+          markers: [],
+        },
+        mediaBlob: null,
+      });
+      if (!eventOnlySave.ok) {
+        throw persistenceError("save-draft-failed", eventOnlySave.reason, eventOnlySave.message);
+      }
+      const eventOnlyCommit = await repository.commit(eventOnlyPending.pkg.meta.id);
+      if (!eventOnlyCommit.ok) {
+        throw persistenceError("commit-failed", eventOnlyCommit.reason, eventOnlyCommit.message);
+      }
+      return eventOnlyPending;
+    }
     throw persistenceError("save-draft-failed", saveResult.reason, saveResult.message);
   }
 
@@ -269,6 +296,75 @@ async function persistPackage(
   if (!commitResult.ok) {
     throw persistenceError("commit-failed", commitResult.reason, commitResult.message);
   }
+  return pending;
+}
+
+async function assertSufficientQuota(
+  repository: RecordingControllerDeps["repository"],
+  pending: PendingPackageSave,
+): Promise<void> {
+  let estimate: { usageBytes: number; quotaBytes: number };
+  try {
+    estimate = await repository.estimateQuota();
+  } catch (err) {
+    console.warn("[recording-controller] quota estimate failed:", err);
+    return;
+  }
+  if (estimate.quotaBytes <= 0) return;
+  const availableBytes = Math.max(0, estimate.quotaBytes - estimate.usageBytes);
+  const requiredBytes = estimateRequiredSaveBytes(pending);
+  if (availableBytes < requiredBytes) {
+    throw persistenceError(
+      "quota-precheck-failed",
+      "quota-exceeded",
+      `Local storage has ${(availableBytes / 1024 / 1024).toFixed(1)} MB available; recording needs about ${(requiredBytes / 1024 / 1024).toFixed(1)} MB.`,
+    );
+  }
+}
+
+function estimateRequiredSaveBytes({ pkg, mediaBlob }: PendingPackageSave): number {
+  const jsonBytes = new Blob([
+    JSON.stringify(pkg.manifest),
+    JSON.stringify(pkg.meta),
+    JSON.stringify(pkg.events),
+    JSON.stringify(pkg.snapshots),
+    JSON.stringify(pkg.indexes ?? {}),
+    JSON.stringify(pkg.media ?? null),
+  ]).size;
+  const mediaBytes = mediaBlob ? Math.ceil(mediaBlob.size * 1.4) : 0;
+  return jsonBytes + mediaBytes + 512 * 1024;
+}
+
+async function buildMediaMissingFallback(
+  packageBuilder: RecordingControllerDeps["packageBuilder"],
+  pending: PendingPackageSave,
+  message: string,
+): Promise<PendingPackageSave> {
+  const warning = mediaMissingWarningEvent(pending.pkg, message);
+  return packageBuilder.build({
+    meta: pending.pkg.meta,
+    events: [...pending.pkg.events, warning],
+    snapshots: pending.pkg.snapshots,
+    media: null,
+  });
+}
+
+function mediaMissingWarningEvent(pkg: RecordingPackageV1, message: string): RecordingEvent {
+  const lastSeq = pkg.events.reduce((max, event) => Math.max(max, event.seq), -1);
+  return {
+    id: generateId("event"),
+    seq: lastSeq + 1,
+    timestampMs: pkg.meta.durationMs,
+    wallTime: new Date().toISOString(),
+    source: "media",
+    track: "media",
+    type: "media-warning",
+    payload: {
+      target: "recorder",
+      code: "recorder-error",
+      message: `Media could not be saved. Event timeline was preserved. ${message}`,
+    },
+  };
 }
 
 function isActiveStatus(status: RecordingControllerStatus): boolean {
