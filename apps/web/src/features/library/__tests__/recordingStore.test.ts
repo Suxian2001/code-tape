@@ -184,6 +184,24 @@ describe("createRecordingStore — two-phase commit", () => {
     expect(await store.list()).toEqual([]);
   });
 
+  it("returns a useful media-write-failed message when blob preparation throws an empty message", async () => {
+    const store = createRecordingStore({ databaseName: uniqueDbName() });
+    const input = makeInput("rec-media-empty-error");
+    vi.spyOn(input.mediaBlob!, "arrayBuffer").mockRejectedValueOnce({
+      name: "NotReadableError",
+      message: "",
+    });
+
+    const result = await store.saveDraft(input);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("media-write-failed");
+      expect(result.message).toContain("NotReadableError");
+      expect(result.message).toContain("media blob could not be prepared");
+    }
+  });
+
   it("load on a draft returns incomplete-package", async () => {
     const store = createRecordingStore({ databaseName: uniqueDbName() });
     await store.saveDraft(makeInput("rec-1"));

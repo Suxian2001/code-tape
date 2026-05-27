@@ -131,7 +131,7 @@ export function createRecordingStore(options: RecordingStoreOptions = {}): Recor
         return {
           ok: false,
           reason: "media-write-failed",
-          message: (err as Error).message ?? "media blob could not be prepared for storage",
+          message: formatErrorMessage(err, "media blob could not be prepared for storage"),
         };
       }
 
@@ -429,6 +429,17 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes.buffer;
+}
+
+function formatErrorMessage(err: unknown, fallback: string): string {
+  const error = err as { name?: unknown; message?: unknown };
+  const name = typeof error.name === "string" ? error.name.trim() : "";
+  const message = typeof error.message === "string" ? error.message.trim() : "";
+  if (name && message) return `${name}: ${message}`;
+  if (name) return `${name}: ${fallback}`;
+  if (message) return message;
+  const text = typeof err === "string" ? err.trim() : "";
+  return text || fallback;
 }
 
 function emptyIndexes(): RecordingIndexes {

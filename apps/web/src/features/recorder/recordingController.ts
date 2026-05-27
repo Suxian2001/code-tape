@@ -198,7 +198,9 @@ export function createRecordingController(options: RecordingControllerOptions): 
           transitionTo("processing", { durationMs: pendingPackageSave.pkg.meta.durationMs });
         }
 
-        pendingPackageSave = await persistPackage(repository, packageBuilder, pendingPackageSave);
+        pendingPackageSave = await persistPackage(repository, packageBuilder, pendingPackageSave, (fallback) => {
+          pendingPackageSave = fallback;
+        });
 
         transitionTo("completed");
         const pkg = pendingPackageSave.pkg;
@@ -249,6 +251,7 @@ async function persistPackage(
   repository: RecordingControllerDeps["repository"],
   packageBuilder: RecordingControllerDeps["packageBuilder"],
   pending: PendingPackageSave,
+  setFallbackPending?: (pending: PendingPackageSave) => void,
 ): Promise<PendingPackageSave> {
   await assertSufficientQuota(repository, pending);
   const { pkg, mediaBlob } = pending;
@@ -267,6 +270,7 @@ async function persistPackage(
   if (!saveResult.ok) {
     if (saveResult.reason === "media-write-failed" && mediaBlob) {
       const eventOnlyPending = await buildMediaMissingFallback(packageBuilder, pending, saveResult.message);
+      setFallbackPending?.(eventOnlyPending);
       await assertSufficientQuota(repository, eventOnlyPending);
       const eventOnlySave = await repository.saveDraft({
         meta: eventOnlyPending.pkg.meta,
@@ -323,16 +327,34 @@ async function assertSufficientQuota(
 }
 
 function estimateRequiredSaveBytes({ pkg, mediaBlob }: PendingPackageSave): number {
-  const jsonBytes = new Blob([
-    JSON.stringify(pkg.manifest),
-    JSON.stringify(pkg.meta),
-    JSON.stringify(pkg.events),
-    JSON.stringify(pkg.snapshots),
-    JSON.stringify(pkg.indexes ?? {}),
-    JSON.stringify(pkg.media ?? null),
-  ]).size;
+  const jsonBytes = estimateValueBytes(pkg.manifest)
+    + estimateValueBytes(pkg.meta)
+    + estimateValueBytes(pkg.events)
+    + estimateValueBytes(pkg.snapshots)
+    + estimateValueBytes(pkg.indexes ?? {})
+    + estimateValueBytes(pkg.media ?? null);
   const mediaBytes = mediaBlob ? Math.ceil(mediaBlob.size * 1.4) : 0;
   return jsonBytes + mediaBytes + 512 * 1024;
+}
+
+function estimateValueBytes(value: unknown): number {
+  if (value === null || typeof value === "undefined") return 4;
+  if (typeof value === "string") return estimateStringBytes(value);
+  if (typeof value === "number" || typeof value === "boolean") return 16;
+  if (Array.isArray(value)) {
+    return value.reduce((sum, item) => sum + estimateValueBytes(item) + 1, 2);
+  }
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).reduce(
+      (sum, [key, item]) => sum + estimateStringBytes(key) + estimateValueBytes(item) + 2,
+      2,
+    );
+  }
+  return estimateStringBytes(String(value));
+}
+
+function estimateStringBytes(value: string): number {
+  return value.length * 2 + 2;
 }
 
 async function buildMediaMissingFallback(
@@ -352,7 +374,7 @@ async function buildMediaMissingFallback(
 function mediaMissingWarningEvent(pkg: RecordingPackageV1, message: string): RecordingEvent {
   const lastSeq = pkg.events.reduce((max, event) => Math.max(max, event.seq), -1);
   return {
-    id: generateId("event"),
+    id: generateId("e"),
     seq: lastSeq + 1,
     timestampMs: pkg.meta.durationMs,
     wallTime: new Date().toISOString(),
