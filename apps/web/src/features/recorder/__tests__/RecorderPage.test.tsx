@@ -390,6 +390,19 @@ describe("RecorderPage", () => {
     );
   });
 
+  it("disposes producers when the recorder page unmounts before recording starts", async () => {
+    const { RecorderPage } = await import("../RecorderPage");
+
+    const { unmount } = render(<RecorderPage />);
+    unmount();
+
+    await waitFor(() => expect(recorderPageMock.runtimeProducer.dispose).toHaveBeenCalled());
+    expect(recorderPageMock.editorProducer.dispose).toHaveBeenCalled();
+    expect(recorderPageMock.pointerProducer.dispose).toHaveBeenCalled();
+    expect(recorderPageMock.shortcutProducer.dispose).toHaveBeenCalled();
+    expect(recorderPageMock.mediaProducer.dispose).toHaveBeenCalled();
+  });
+
   it("reports camera preview position changes to the media producer", async () => {
     const { RecorderPage } = await import("../RecorderPage");
 
