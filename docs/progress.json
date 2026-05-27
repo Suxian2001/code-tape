@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-27T01:09:35Z",
+  "updatedAt": "2026-05-27T01:19:18Z",
   "students": {
     "ceilf6": {
-      "activeIssue": null,
+      "activeIssue": 78,
       "completedIssues": [
         11,
         10,
@@ -369,6 +369,20 @@
       "status": "claimed",
       "assignee": "yangchloeeeee",
       "claimedAt": "2026-05-26T14:38:33Z",
+      "closedAt": null,
+      "mergedPr": null
+    },
+    "78": {
+      "number": 78,
+      "title": "[P0] 录制到回放主链路 Playwright e2e",
+      "score": 5,
+      "stack": [
+        "react",
+        "typescript"
+      ],
+      "status": "claimed",
+      "assignee": "ceilf6",
+      "claimedAt": "2026-05-27T01:19:18Z",
       "closedAt": null,
       "mergedPr": null
     },
