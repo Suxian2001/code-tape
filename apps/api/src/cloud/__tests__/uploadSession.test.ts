@@ -30,6 +30,50 @@ test("createUploadSession is idempotent per owner and idempotency key", async ()
   assert.ok(second.value.uploadTargets.every((target) => target.method === "PUT"));
 });
 
+test("createUploadSession keeps one session for concurrent matching idempotency keys", async () => {
+  const service = createCloudRecordingService({
+    metadata: createMemoryMetadataRepository(),
+    objectStorage: createMemoryObjectStorage(),
+  });
+  const pkg = await makePackage();
+  const request = await makeCreateSessionRequest(pkg);
+
+  const [first, second] = await Promise.all([
+    service.createUploadSession({ ownerId: "owner-1", input: request }),
+    service.createUploadSession({ ownerId: "owner-1", input: request }),
+  ]);
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  if (!first.ok || !second.ok) return;
+  assert.equal(second.value.sessionId, first.value.sessionId);
+  assert.equal(second.value.recordingId, first.value.recordingId);
+  assert.equal(second.value.uploadTargets.length, request.assets.length);
+});
+
+test("createUploadSession rejects concurrent idempotency key reuse with different bodies", async () => {
+  const service = createCloudRecordingService({
+    metadata: createMemoryMetadataRepository(),
+    objectStorage: createMemoryObjectStorage(),
+  });
+  const pkg = await makePackage();
+  const request = await makeCreateSessionRequest(pkg);
+
+  const [first, second] = await Promise.all([
+    service.createUploadSession({ ownerId: "owner-1", input: request }),
+    service.createUploadSession({
+      ownerId: "owner-1",
+      input: { ...request, title: "Different recording" },
+    }),
+  ]);
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, false);
+  if (second.ok) return;
+  assert.equal(second.error.code, "upload-session-conflict");
+  assert.equal(second.error.message, "idempotency key reused with a different upload request");
+});
+
 for (const input of [
   {
     name: "changed local package id",
@@ -69,6 +113,52 @@ for (const input of [
     assert.equal(second.error.message, "idempotency key reused with a different upload request");
   });
 }
+
+test("createUploadSession does not expose upload targets after the session is completed", async () => {
+  const service = createCloudRecordingService({
+    metadata: createMemoryMetadataRepository(),
+    objectStorage: createMemoryObjectStorage(),
+  });
+  const pkg = await makePackage();
+  const request = await makeCreateSessionRequest(pkg);
+  const created = await service.createUploadSession({ ownerId: "owner-1", input: request });
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+
+  const completed = await service.completeUpload({
+    ownerId: "owner-1",
+    sessionId: created.value.sessionId,
+    input: { uploadedAssets: request.assets },
+  });
+  const retry = await service.createUploadSession({ ownerId: "owner-1", input: request });
+
+  assert.equal(completed.ok, true);
+  assert.equal(retry.ok, false);
+  if (retry.ok) return;
+  assert.equal(retry.error.code, "upload-session-conflict");
+  assert.equal(retry.error.message, "upload session is not open");
+});
+
+test("createUploadSession rejects expired idempotency retries without upload targets", async () => {
+  let nowMs = Date.parse("2026-05-27T00:00:00.000Z");
+  const service = createCloudRecordingService({
+    metadata: createMemoryMetadataRepository(),
+    objectStorage: createMemoryObjectStorage(),
+    now: () => new Date(nowMs),
+  });
+  const pkg = await makePackage();
+  const request = await makeCreateSessionRequest(pkg);
+  const created = await service.createUploadSession({ ownerId: "owner-1", input: request });
+  assert.equal(created.ok, true);
+
+  nowMs = Date.parse("2026-05-27T00:31:00.000Z");
+  const retry = await service.createUploadSession({ ownerId: "owner-1", input: request });
+
+  assert.equal(retry.ok, false);
+  if (retry.ok) return;
+  assert.equal(retry.error.code, "upload-session-expired");
+  assert.equal(retry.error.message, "upload session expired");
+});
 
 test("createUploadSession rejects incomplete package asset sets", async () => {
   const service = createCloudRecordingService({

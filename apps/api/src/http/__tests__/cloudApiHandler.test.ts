@@ -250,6 +250,59 @@ test("cloud API rejects idempotency key reuse with a different upload-session bo
   });
 });
 
+test("cloud API does not return upload targets after an upload session is completed", async () => {
+  const service = createCloudRecordingService({
+    metadata: createMemoryMetadataRepository(),
+    objectStorage: createMemoryObjectStorage(),
+  });
+  const handler = createCloudApiHandler({
+    service,
+    createRequestId: () => "req-completed-idempotency",
+  });
+  const request = await makeCreateSessionRequest(await makePackage());
+  const first = await handler(
+    new Request("http://localhost/api/recordings/upload-sessions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-owner-token": "owner-1",
+      },
+      body: JSON.stringify(request),
+    }),
+  );
+  const firstBody = (await first.json()) as { sessionId: string };
+  const completed = await service.completeUpload({
+    ownerId: "owner-1",
+    sessionId: firstBody.sessionId,
+    input: { uploadedAssets: request.assets },
+  });
+
+  const retry = await handler(
+    new Request("http://localhost/api/recordings/upload-sessions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-owner-token": "owner-1",
+      },
+      body: JSON.stringify(request),
+    }),
+  );
+  const body = (await retry.json()) as {
+    error: { code: string; message: string; requestId: string };
+  };
+
+  assert.equal(first.status, 201);
+  assert.equal(completed.ok, true);
+  assert.equal(retry.status, 409);
+  assert.deepEqual(body, {
+    error: {
+      code: "upload-session-conflict",
+      message: "upload session is not open",
+      requestId: "req-completed-idempotency",
+    },
+  });
+});
+
 async function makePackage(): Promise<RecordingPackageV1> {
   const events: RecordingPackageV1["events"] = [];
   const snapshots: RecordingPackageV1["snapshots"] = [];

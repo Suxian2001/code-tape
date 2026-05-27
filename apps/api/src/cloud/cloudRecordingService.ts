@@ -52,19 +52,13 @@ export function createCloudRecordingService(deps: {
         input.idempotencyKey,
       );
       if (existing) {
-        const assets = await deps.metadata.listAssets(existing.recordingId);
-        const recording = await deps.metadata.getRecording(existing.recordingId);
-        const conflict = findIdempotencyConflict(recording, assets, input);
-        if (conflict) return { ok: false, error: conflict };
-        return {
-          ok: true,
-          value: {
-            sessionId: existing.id,
-            recordingId: existing.recordingId,
-            expiresAt: existing.expiresAt,
-            uploadTargets: createUploadTargets(deps.objectStorage, assets),
-          },
-        };
+        return resolveExistingUploadSession({
+          metadata: deps.metadata,
+          objectStorage: deps.objectStorage,
+          now,
+          existing,
+          input,
+        });
       }
 
       const createdAt = now().toISOString();
@@ -114,7 +108,16 @@ export function createCloudRecordingService(deps: {
         completedAt: null,
       };
 
-      await deps.metadata.createUpload({ recording, assets, session });
+      const write = await deps.metadata.createUpload({ recording, assets, session });
+      if (write.status === "idempotency-key-exists") {
+        return resolveExistingUploadSession({
+          metadata: deps.metadata,
+          objectStorage: deps.objectStorage,
+          now,
+          existing: write.existingSession,
+          input,
+        });
+      }
 
       return {
         ok: true,
@@ -163,6 +166,40 @@ export function createCloudRecordingService(deps: {
         uploadedAssetKinds: input.uploadedAssets.map((asset) => asset.kind),
       });
       return { ok: true, value: { recordingId: session.recordingId, status: "processing" } };
+    },
+  };
+}
+
+async function resolveExistingUploadSession(input: {
+  metadata: MetadataRepository;
+  objectStorage: ObjectStorage;
+  now: () => Date;
+  existing: UploadSessionRecord;
+  input: CreateUploadSessionRequest;
+}): Promise<CloudResult<CreateUploadSessionResponse>> {
+  const assets = await input.metadata.listAssets(input.existing.recordingId);
+  const recording = await input.metadata.getRecording(input.existing.recordingId);
+  const conflict = findIdempotencyConflict(recording, assets, input.input);
+  if (conflict) return { ok: false, error: conflict };
+  if (input.existing.status !== "open") {
+    return {
+      ok: false,
+      error: { code: "upload-session-conflict", message: "upload session is not open" },
+    };
+  }
+  if (Date.parse(input.existing.expiresAt) <= input.now().getTime()) {
+    return {
+      ok: false,
+      error: { code: "upload-session-expired", message: "upload session expired" },
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      sessionId: input.existing.id,
+      recordingId: input.existing.recordingId,
+      expiresAt: input.existing.expiresAt,
+      uploadTargets: createUploadTargets(input.objectStorage, assets),
     },
   };
 }

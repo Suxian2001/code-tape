@@ -1,4 +1,4 @@
-import type { MetadataRepository } from "./metadataRepository.js";
+import type { CreateUploadWriteResult, MetadataRepository } from "./metadataRepository.js";
 import type {
   CloudRecordingAssetRecord,
   CloudRecordingRecord,
@@ -9,6 +9,7 @@ export function createMemoryMetadataRepository(): MetadataRepository {
   const recordings = new Map<string, CloudRecordingRecord>();
   const sessions = new Map<string, UploadSessionRecord>();
   const assetsByRecording = new Map<string, CloudRecordingAssetRecord[]>();
+  const sessionIdByIdempotencyKey = new Map<string, string>();
 
   return {
     async findSessionByOwnerAndIdempotencyKey(
@@ -37,13 +38,26 @@ export function createMemoryMetadataRepository(): MetadataRepository {
       recording: CloudRecordingRecord;
       assets: CloudRecordingAssetRecord[];
       session: UploadSessionRecord;
-    }): Promise<void> {
+    }): Promise<CreateUploadWriteResult> {
+      const idempotencyKey = sessionKey(input.session.ownerId, input.session.idempotencyKey);
+      const existingSessionId = sessionIdByIdempotencyKey.get(idempotencyKey);
+      if (existingSessionId) {
+        const existingSession = sessions.get(existingSessionId);
+        if (existingSession) {
+          return {
+            status: "idempotency-key-exists",
+            existingSession: { ...existingSession },
+          };
+        }
+      }
       recordings.set(input.recording.id, { ...input.recording });
       sessions.set(input.session.id, { ...input.session });
+      sessionIdByIdempotencyKey.set(idempotencyKey, input.session.id);
       assetsByRecording.set(
         input.recording.id,
         input.assets.map((asset) => ({ ...asset })),
       );
+      return { status: "created" };
     },
     async markUploadCompleted(input: {
       sessionId: string;
@@ -92,4 +106,8 @@ export function createMemoryMetadataRepository(): MetadataRepository {
       );
     },
   };
+}
+
+function sessionKey(ownerId: string, idempotencyKey: string): string {
+  return `${ownerId}\0${idempotencyKey}`;
 }

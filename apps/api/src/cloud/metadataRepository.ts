@@ -4,6 +4,10 @@ import type {
   UploadSessionRecord,
 } from "./types.js";
 
+export type CreateUploadWriteResult =
+  | { status: "created" }
+  | { status: "idempotency-key-exists"; existingSession: UploadSessionRecord };
+
 export type MetadataRepository = {
   findSessionByOwnerAndIdempotencyKey(
     ownerId: string,
@@ -12,11 +16,12 @@ export type MetadataRepository = {
   getSession(sessionId: string): Promise<UploadSessionRecord | null>;
   getRecording(recordingId: string): Promise<CloudRecordingRecord | null>;
   listAssets(recordingId: string): Promise<CloudRecordingAssetRecord[]>;
+  // Atomically writes recording/assets/session with a unique owner + idempotencyKey boundary.
   createUpload(input: {
     recording: CloudRecordingRecord;
     assets: CloudRecordingAssetRecord[];
     session: UploadSessionRecord;
-  }): Promise<void>;
+  }): Promise<CreateUploadWriteResult>;
   markUploadCompleted(input: {
     sessionId: string;
     completedAt: string;
