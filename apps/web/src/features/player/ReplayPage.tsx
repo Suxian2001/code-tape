@@ -66,7 +66,7 @@ type ReplayOverlayState = {
 
 const EMPTY_OVERLAY_STATE: ReplayOverlayState = { pointer: null, shortcut: null };
 const TRANSIENT_OVERLAY_TTL_MS = 900;
-const MEDIA_DRIFT_THRESHOLD_MS = 250;
+type RecordedMedia = NonNullable<RecordingPackageV1["media"]>;
 const EVENT_ONLY_REPLAY_NOTICE = "音视频不可用，已切换为纯事件流回放";
 
 function isEventOnlyMediaDegraded(
@@ -77,7 +77,6 @@ function isEventOnlyMediaDegraded(
   if (!pkg.media || mediaBlob) return false;
   return warnings.some((warning) => warning.code === "media-missing");
 }
-type RecordedMedia = NonNullable<RecordingPackageV1["media"]>;
 
 /**
  * ReplayPage — wires the replay core (scheduler + clock + repository + runtime)

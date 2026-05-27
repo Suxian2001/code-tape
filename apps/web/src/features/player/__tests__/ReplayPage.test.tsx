@@ -439,6 +439,30 @@ describe("ReplayPage", () => {
     expect(screen.queryByText("音视频不可用，已切换为纯事件流回放")).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["invalid-manifest", { code: "invalid-manifest" as const, message: "manifest missing" }],
+    ["unsupported-schema", { code: "unsupported-schema" as const, schemaVersion: "9.9.9" }],
+  ])("blocks replay when package load fails with %s", async (expectedCode, error) => {
+    replayPageMock.repository.load.mockResolvedValueOnce({
+      ok: false,
+      error,
+    });
+    const { ReplayPage } = await import("../ReplayPage");
+    const { MemoryRouter } = await import("react-router-dom");
+
+    render(
+      <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+        <ReplayPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(new RegExp(`加载失败：${expectedCode}`))).toBeInTheDocument(),
+    );
+    expect(replayPageMock.scheduler.load).not.toHaveBeenCalled();
+    expect(screen.queryByText("音视频不可用，已切换为纯事件流回放")).not.toBeInTheDocument();
+  });
+
   it("keeps replay controls usable in event-only mode when media is missing", async () => {
     replayPageMock.repository.load.mockResolvedValueOnce({
       ok: true,
