@@ -123,6 +123,35 @@ test("validation worker validates media assets without text-decoding binary cont
   assert.equal(job.recording.status, "ready");
 });
 
+test("validation worker validates thumbnail assets without text-decoding binary content", async () => {
+  const metadata = createMemoryMetadataRepository();
+  const objectStorage = createMemoryObjectStorage();
+  const service = createCloudRecordingService({ metadata, objectStorage });
+  const thumbnailBytes = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0xff, 0x80, 0x57, 0x45]);
+  const pkg = await makePackage();
+  const created = await service.createUploadSession({
+    ownerId: "owner-1",
+    input: await makeCreateSessionRequest(pkg, { thumbnailBytes }),
+  });
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+  await uploadPackageAssets(objectStorage, created.value.uploadTargets, pkg, { thumbnailBytes });
+  const completed = await service.completeUpload({
+    ownerId: "owner-1",
+    sessionId: created.value.sessionId,
+    input: {
+      uploadedAssets: await makeUploadedAssets(pkg, { thumbnailBytes }),
+    },
+  });
+  assert.equal(completed.ok, true);
+
+  const job = await processNextRecordingValidationJob({ metadata, objectStorage });
+
+  assert.equal(job.ok, true);
+  if (!job.ok) return;
+  assert.equal(job.recording.status, "ready");
+});
+
 test("validation worker marks checksum-matching malformed JSON packages failed", async () => {
   const metadata = createMemoryMetadataRepository();
   const objectStorage = createMemoryObjectStorage();
@@ -213,7 +242,7 @@ async function makePackage(input: { mediaSha256?: string } = {}): Promise<Record
 
 async function makeCreateSessionRequest(
   pkg: RecordingPackageV1,
-  input: { mediaBytes?: Uint8Array } = {},
+  input: { mediaBytes?: Uint8Array; thumbnailBytes?: Uint8Array } = {},
 ) {
   return {
     idempotencyKey: "idem-1",
@@ -230,7 +259,7 @@ async function makeCreateSessionRequest(
 
 async function makeUploadedAssets(
   pkg: RecordingPackageV1,
-  input: { mediaBytes?: Uint8Array } = {},
+  input: { mediaBytes?: Uint8Array; thumbnailBytes?: Uint8Array } = {},
 ): Promise<CreateUploadSessionRequest["assets"]> {
   const assets: CreateUploadSessionRequest["assets"] = await Promise.all([
     asset("manifest", pkg.manifest),
@@ -244,6 +273,16 @@ async function makeUploadedAssets(
       sha256: pkg.manifest.checksums.mediaSha256 ?? "",
       sizeBytes: input.mediaBytes.byteLength,
       mimeType: "video/webm",
+    });
+  }
+  if (input.thumbnailBytes) {
+    assets.push({
+      kind: "thumbnail",
+      sha256: await sha256Blob(
+        new Blob([toArrayBuffer(input.thumbnailBytes)], { type: "image/webp" }),
+      ),
+      sizeBytes: input.thumbnailBytes.byteLength,
+      mimeType: "image/webp",
     });
   }
   return assets;
@@ -263,7 +302,7 @@ async function uploadPackageAssets(
   objectStorage: ReturnType<typeof createMemoryObjectStorage>,
   targets: Array<{ kind: string; url: string; headers: Record<string, string> }>,
   pkg: RecordingPackageV1,
-  input: { mediaBytes?: Uint8Array } = {},
+  input: { mediaBytes?: Uint8Array; thumbnailBytes?: Uint8Array } = {},
 ) {
   const values: Record<string, unknown> = {
     manifest: pkg.manifest,
@@ -273,13 +312,21 @@ async function uploadPackageAssets(
   };
   await Promise.all(
     targets.map((target) => {
-      const body =
-        target.kind === "media" && input.mediaBytes
-          ? input.mediaBytes
-          : new TextEncoder().encode(canonicalStringify(values[target.kind]));
+      let body: Uint8Array;
+      if (target.kind === "media" && input.mediaBytes) {
+        body = input.mediaBytes;
+      } else if (target.kind === "thumbnail" && input.thumbnailBytes) {
+        body = input.thumbnailBytes;
+      } else {
+        body = new TextEncoder().encode(canonicalStringify(values[target.kind]));
+      }
       return objectStorage.putBySignedUrl(target.url, body, {
         contentType: target.headers["content-type"] ?? "application/octet-stream",
       });
     }),
   );
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }

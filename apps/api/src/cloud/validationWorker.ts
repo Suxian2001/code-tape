@@ -127,13 +127,16 @@ async function findObjectChecksumFailure(
     const object = await objectStorage.getObject(asset.objectKey);
     if (!object) return `missing object: ${asset.kind}`;
     if (object.sizeBytes !== asset.sizeBytes) return `size mismatch: ${asset.kind}`;
-    const sha256 =
-      asset.kind === "media"
-        ? await sha256Blob(new Blob([toArrayBuffer(object.body)], { type: object.contentType }))
-        : await sha256Hex(new TextDecoder().decode(object.body));
+    const sha256 = isBinaryAssetKind(asset.kind)
+      ? await sha256Blob(new Blob([toArrayBuffer(object.body)], { type: object.contentType }))
+      : await sha256Hex(new TextDecoder().decode(object.body));
     if (sha256 !== asset.sha256) return `checksum mismatch: ${asset.kind}`;
   }
   return null;
+}
+
+function isBinaryAssetKind(kind: CloudRecordingAssetRecord["kind"]): boolean {
+  return kind === "media" || kind === "thumbnail";
 }
 
 async function readJsonAsset<T>(
