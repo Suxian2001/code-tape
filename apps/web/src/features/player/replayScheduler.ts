@@ -365,6 +365,8 @@ export function createReplayScheduler(options: ReplaySchedulerOptions = {}): Rep
     },
     async seek(targetMs) {
       if (!pkg) return;
+      const shouldResumePlayback =
+        schedulerState.status === "playing" || schedulerState.status === "buffering";
       tickStrategy.stop();
       driving = false;
       updateState({ status: "seeking" });
@@ -376,9 +378,11 @@ export function createReplayScheduler(options: ReplaySchedulerOptions = {}): Rep
       updateState({
         timelineTimeMs: clamped,
         lastAppliedSeq: lastSeq,
-        status: "paused",
+        status: shouldResumePlayback ? "playing" : "paused",
         mediaStatus: currentMediaStatus(),
+        driftMs: 0,
       });
+      if (shouldResumePlayback) ensureDriving();
       options.onTick?.(stableState, [], clamped);
     },
     setRate(rate: ReplayPlaybackRate) {

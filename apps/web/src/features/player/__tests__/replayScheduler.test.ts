@@ -494,6 +494,32 @@ describe("createReplayScheduler", () => {
     expect(seek).toHaveBeenCalledWith(1600);
   });
 
+  it("clears stale drift after seek completes", async () => {
+    let wall = 0;
+    let mediaCurrentTimeSec = 0;
+    const clock = createTimelineClock({ nowProvider: () => wall });
+    const scheduler = createReplayScheduler({
+      clock,
+      mediaAdapter: testMediaAdapter({
+        currentTimeSec: () => mediaCurrentTimeSec,
+      }) as never,
+      tickStrategy: { start: () => {}, stop: () => {} },
+    });
+    const latest = watchState(scheduler);
+    await scheduler.load(makePkg([], [], 5000, true));
+
+    scheduler.play();
+    wall = 1600;
+    mediaCurrentTimeSec = 1;
+    scheduler.tick();
+    expect(latest().driftMs).toBe(600);
+
+    await scheduler.seek(1200);
+
+    expect(latest().timelineTimeMs).toBe(1200);
+    expect(latest().driftMs).toBe(0);
+  });
+
   it("does not apply events beyond duration when ending after a clock overshoot", async () => {
     let wall = 0;
     const clock = createTimelineClock({ nowProvider: () => wall });
@@ -512,6 +538,44 @@ describe("createReplayScheduler", () => {
     expect(latest().timelineTimeMs).toBe(1000);
     expect(latest().lastAppliedSeq).toBe(0);
     expect(scheduler.getStableState().editor.code).toBe("");
+  });
+
+  it("restores playback after seek when replay was playing", async () => {
+    let wall = 0;
+    const start = vi.fn();
+    const stop = vi.fn();
+    const clock = createTimelineClock({ nowProvider: () => wall });
+    const scheduler = createReplayScheduler({
+      clock,
+      tickStrategy: { start, stop },
+    });
+    const latest = watchState(scheduler);
+    await scheduler.load(makePkg([content(1, 1000, "after-seek")], [], 5000));
+
+    scheduler.play();
+    await scheduler.seek(900);
+
+    expect(latest().status).toBe("playing");
+    expect(start).toHaveBeenCalledTimes(2);
+
+    wall = 300;
+    scheduler.tick();
+
+    expect(latest().timelineTimeMs).toBe(1200);
+    expect(scheduler.getStableState().editor.code).toBe("after-seek");
+  });
+
+  it("keeps replay paused after seek when replay was paused", async () => {
+    const scheduler = createReplayScheduler({
+      tickStrategy: { start: vi.fn(), stop: vi.fn() },
+    });
+    const latest = watchState(scheduler);
+    await scheduler.load(makePkg([content(1, 1000, "paused-seek")], [], 5000));
+
+    await scheduler.seek(1200);
+
+    expect(latest().status).toBe("paused");
+    expect(scheduler.getStableState().editor.code).toBe("paused-seek");
   });
 
   it("handles rejected async media operations during ready ticks", async () => {

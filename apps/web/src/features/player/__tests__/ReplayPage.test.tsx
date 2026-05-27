@@ -173,30 +173,37 @@ describe("ReplayPage", () => {
   });
 
   it("wires replay control callbacks to scheduler commands", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
     const { ReplayPage } = await import("../ReplayPage");
 
-    render(<ReplayPage />);
+    try {
+      render(<ReplayPage />);
 
-    await waitFor(() => expect(replayPageMock.scheduler.load).toHaveBeenCalledWith(replayPageMock.packageData));
-    expect(replayPageMock.controlsProps?.durationMs).toBe(120_000);
+      await waitFor(() => expect(replayPageMock.scheduler.load).toHaveBeenCalledWith(replayPageMock.packageData));
+      expect(replayPageMock.controlsProps?.durationMs).toBe(120_000);
 
-    await act(async () => {
-      await replayPageMock.controlsProps?.onSeek(42_000);
-    });
-    act(() => {
-      replayPageMock.controlsProps?.onPlay();
-      replayPageMock.controlsProps?.onRate(1.5);
-      replayPageMock.controlsProps?.onVolume(35);
-      replayPageMock.controlsProps?.onMuted(true);
-    });
+      await act(async () => {
+        await replayPageMock.controlsProps?.onSeek(42_000);
+      });
+      act(() => {
+        replayPageMock.controlsProps?.onPlayPause();
+        replayPageMock.controlsProps?.onRate(1.5);
+        replayPageMock.controlsProps?.onVolume(35);
+        replayPageMock.controlsProps?.onMuted(true);
+      });
 
-    expect(replayPageMock.scheduler.seek).toHaveBeenCalledWith(42_000);
-    expect(replayPageMock.scheduler.play).toHaveBeenCalledTimes(1);
-    expect(replayPageMock.scheduler.setRate).toHaveBeenCalledWith(1.5);
-    expect(replayPageMock.scheduler.setVolume).toHaveBeenCalledWith(35);
-    expect(replayPageMock.scheduler.setMuted).toHaveBeenCalledWith(true);
-    await waitFor(() => expect(replayPageMock.controlsProps?.volume).toBe(35));
-    expect(replayPageMock.controlsProps?.muted).toBe(true);
+      expect(replayPageMock.scheduler.seek).toHaveBeenCalledWith(42_000);
+      expect(replayPageMock.scheduler.play).toHaveBeenCalledTimes(1);
+      expect(replayPageMock.scheduler.setRate).toHaveBeenCalledWith(1.5);
+      expect(replayPageMock.scheduler.setVolume).toHaveBeenCalledWith(35);
+      expect(replayPageMock.scheduler.setMuted).toHaveBeenCalledWith(true);
+      await waitFor(() => expect(replayPageMock.controlsProps?.volume).toBe(35));
+      expect(replayPageMock.controlsProps?.muted).toBe(true);
+    } finally {
+      play.mockRestore();
+      pause.mockRestore();
+    }
   });
 
   it("renders scheduler stable state into the read-only editor and runtime panel", async () => {

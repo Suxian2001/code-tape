@@ -250,7 +250,6 @@ export function ReplayPage() {
             ? pauseReplay()
             : playReplay()
         }
-        onPlay={playReplay}
         onSeek={(target) => scheduler.seek(target)}
         onRate={(rate) => scheduler.setRate(rate)}
         volume={volume}
