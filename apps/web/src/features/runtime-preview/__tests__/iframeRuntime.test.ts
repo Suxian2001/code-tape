@@ -208,6 +208,24 @@ describe("IframeRuntime sandbox lifecycle", () => {
     host.remove();
   });
 
+  it("strips scripts from replay preview HTML before writing the no-script sandbox", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const runtime = createIframeRuntime();
+
+    await runtime.mount(host);
+    await runtime.renderPreview(
+      "<body><script>window.__executed = true</script><p>safe</p><script type=\"module\">console.log('again')</script></body>",
+    );
+    const frame = host.querySelector("iframe");
+
+    expect(frame?.getAttribute("sandbox")).toBe("");
+    expect(frame?.srcdoc).toContain("<p>safe</p>");
+    expect(frame?.srcdoc).not.toMatch(/<script/i);
+    runtime.destroy();
+    host.remove();
+  });
+
   it("keeps the mounted host usable after reset", async () => {
     const host = document.createElement("div");
     document.body.appendChild(host);

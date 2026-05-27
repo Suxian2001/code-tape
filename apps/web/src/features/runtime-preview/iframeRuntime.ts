@@ -18,6 +18,8 @@ export const RUNTIME_PREVIEW_HTML_MAX_CHARS = 200_000;
 
 const RUNTIME_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none';";
+const REPLAY_PREVIEW_CSP =
+  "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none';";
 
 /**
  * Validate that an incoming postMessage genuinely came from our iframe runtime
@@ -47,8 +49,8 @@ function buildSrcDoc(bootScript: string): string {
 }
 
 function buildPreviewSrcDoc(previewHtml: string): string {
-  const cappedPreviewHtml = limitString(previewHtml, RUNTIME_PREVIEW_HTML_MAX_CHARS);
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${RUNTIME_CSP}" /><title>code-tape replay preview</title></head>${cappedPreviewHtml}</html>`;
+  const safePreviewHtml = sanitizePreviewHtml(previewHtml);
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${REPLAY_PREVIEW_CSP}" /><title>code-tape replay preview</title></head>${safePreviewHtml}</html>`;
 }
 
 function isRuntimePayload(type: string, payload: object): boolean {
@@ -75,6 +77,16 @@ function isRuntimePayload(type: string, payload: object): boolean {
 
 function limitString(value: string, maxLength: number): string {
   return value.length > maxLength ? value.slice(0, maxLength) : value;
+}
+
+function sanitizePreviewHtml(previewHtml: string): string {
+  const cappedPreviewHtml = limitString(previewHtml, RUNTIME_PREVIEW_HTML_MAX_CHARS);
+  if (typeof DOMParser === "undefined") {
+    return cappedPreviewHtml.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+  }
+  const doc = new DOMParser().parseFromString(cappedPreviewHtml, "text/html");
+  doc.querySelectorAll("script").forEach((script) => script.remove());
+  return doc.body ? doc.body.outerHTML : "";
 }
 
 function sanitizeRuntimeMessage(message: RuntimeMessage): RuntimeMessage {
