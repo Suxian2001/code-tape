@@ -2,13 +2,13 @@
 
 > 本文件由 GitHub Actions 自动生成，请勿手动修改。
 
-更新时间：2026-05-27T03:18:49Z
+更新时间：2026-05-27T08:13:48Z
 
 ## 当前任务
 
 | GitHub 用户 | 当前 Issue | 认领时间 |
 | --- | --- | --- |
-| - | - | - |
+| ceilf6 | #86 Fix recorder runtime output and sandbox replay | 2026-05-27 08:13:48Z |
 
 ## 积分总览
 

@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-27T03:18:49Z",
+  "updatedAt": "2026-05-27T08:13:48Z",
   "students": {
     "ceilf6": {
-      "activeIssue": null,
+      "activeIssue": 86,
       "completedIssues": [
         11,
         10,
@@ -405,6 +405,20 @@
       "claimedAt": "2026-05-26T14:37:58Z",
       "closedAt": "2026-05-27T02:02:21Z",
       "mergedPr": 82
+    },
+    "86": {
+      "number": 86,
+      "title": "Fix recorder runtime output and sandbox replay",
+      "score": 3,
+      "stack": [
+        "react",
+        "typescript"
+      ],
+      "status": "claimed",
+      "assignee": "ceilf6",
+      "claimedAt": "2026-05-27T08:13:48Z",
+      "closedAt": null,
+      "mergedPr": null
     }
   },
   "ledger": [
