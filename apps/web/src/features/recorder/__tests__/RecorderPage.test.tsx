@@ -103,14 +103,14 @@ const recorderPageMock = vi.hoisted(() => {
       ],
     })),
     requestPermission: vi.fn(),
-    openStream: vi.fn<MediaDevicesController["openStream"]>(async () => ({
-      stream,
+    openStream: vi.fn<MediaDevicesController["openStream"]>(async (request) => ({
+      stream: request.audioDeviceId === null && request.cameraDeviceId === null ? null : stream,
       warnings: [],
       capability: {
         audio: "available" as const,
         camera: "available" as const,
-        selectedAudioDeviceId: "mic-1",
-        selectedCameraDeviceId: "cam-1",
+        selectedAudioDeviceId: request.audioDeviceId ?? null,
+        selectedCameraDeviceId: request.cameraDeviceId ?? null,
       },
     })),
     setTrackEnabled: vi.fn(),
@@ -570,10 +570,13 @@ describe("RecorderPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "开始录制" }));
 
     await waitFor(() => expect(recorderPageMock.mediaProducer.start).toHaveBeenCalledTimes(1));
-    expect(recorderPageMock.devices.openStream).not.toHaveBeenCalled();
+    expect(recorderPageMock.devices.openStream).toHaveBeenCalledWith({
+      audioDeviceId: null,
+      cameraDeviceId: null,
+    });
     expect(recorderPageMock.mediaProducerDeps?.getCapability()).toEqual({
-      audio: "unsupported",
-      camera: "unsupported",
+      audio: "available",
+      camera: "available",
       selectedAudioDeviceId: null,
       selectedCameraDeviceId: null,
     });

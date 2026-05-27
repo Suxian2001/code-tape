@@ -319,7 +319,14 @@ export function RecorderPage() {
       const cameraDeviceId = cameraDeviceSelectionTouchedRef.current
         ? selectedCameraDeviceId
         : selectedCameraDeviceId ?? available.camera[0]?.deviceId ?? null;
-      let media = await openSelectedMedia(stack.devices, { audioDeviceId, cameraDeviceId });
+      const explicitlyDisabledAllMedia = audioDeviceSelectionTouchedRef.current
+        && cameraDeviceSelectionTouchedRef.current
+        && audioDeviceId === null
+        && cameraDeviceId === null;
+      const shouldOpenMedia = audioDeviceId !== null || cameraDeviceId !== null || explicitlyDisabledAllMedia;
+      let media = shouldOpenMedia
+        ? await openSelectedMedia(stack.devices, { audioDeviceId, cameraDeviceId })
+        : eventOnlyMedia();
       if (!isCurrentStart(startToken)) {
         stack.devices.release();
         return;
@@ -557,8 +564,6 @@ async function openSelectedMedia(
   request: MediaOpenRequest,
 ): Promise<OpenStreamResult> {
   try {
-    if (request.audioDeviceId === null && request.cameraDeviceId === null) return eventOnlyMedia();
-
     const result = await devices.openStream(request);
     const requestedAnyTrack = request.audioDeviceId !== null || request.cameraDeviceId !== null;
     if (!result.stream && requestedAnyTrack) {
