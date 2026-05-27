@@ -5,6 +5,7 @@ import type { CodeEditorProps } from "@/features/editor/CodeEditor";
 import type { PreviewPaneProps } from "@/features/runtime-preview/PreviewPane";
 import type {
   RecordingEvent,
+  MediaClockAdapter,
   RecordingPackageV1,
   RecordingRepository,
   ReplaySchedulerState,
@@ -313,6 +314,7 @@ describe("ReplayPage", () => {
     });
 
     expect(screen.getByLabelText("回放鼠标位置")).toBeInTheDocument();
+    expect(screen.getByLabelText("回放快捷键")).toHaveTextContent("Comment");
     expect(screen.getByText("Comment")).toBeInTheDocument();
   });
 
@@ -463,6 +465,43 @@ describe("ReplayPage", () => {
 
     expect(adapterAttachOrder).toBeLessThan(loadOrder);
     pause.mockRestore();
+  });
+
+  it("maps recording media offset as a media-time offset on the shared timeline", async () => {
+    const originalMedia = replayPageMock.packageData.media;
+    replayPageMock.packageData.media = {
+      ...originalMedia!,
+      durationMs: 120_000,
+      timelineOffsetMs: 5_000,
+    };
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const { ReplayPage } = await import("../ReplayPage");
+
+    try {
+      render(<ReplayPage />);
+
+      await waitFor(() =>
+        expect(replayPageMock.scheduler.setMediaAdapter.mock.calls.some(([adapter]) => adapter)).toBe(
+          true,
+        ),
+      );
+      const adapter = replayPageMock.scheduler.setMediaAdapter.mock.calls.find(
+        ([candidate]) => candidate,
+      )?.[0] as MediaClockAdapter | undefined;
+
+      expect(adapter?.segments[0]).toEqual({
+        blobId: "blob-1",
+        timelineStartMs: 0,
+        timelineEndMs: 115_000,
+        mediaStartMs: 5_000,
+        mediaEndMs: 120_000,
+      });
+      expect(adapter?.timelineToMediaTime(42_000)).toBe(47_000);
+      expect(adapter?.mediaToTimelineTime(47)).toBe(42_000);
+    } finally {
+      replayPageMock.packageData.media = originalMedia;
+      pause.mockRestore();
+    }
   });
 
   it("keeps the scheduler subscription alive when the replay id changes", async () => {

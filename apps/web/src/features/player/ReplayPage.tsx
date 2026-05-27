@@ -21,6 +21,7 @@ import { createRecordingStore } from "@/features/library/recordingStore";
 import { Toggle } from "@/shared/ui";
 import type {
   PackageWarning,
+  MediaTimelineSegment,
   RecordingEvent,
   RecordingPackageV1,
   ReplaySchedulerState,
@@ -116,16 +117,9 @@ export function ReplayPage() {
   const shortcutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentMedia = pkg?.media ?? null;
   const createRecordedMediaAdapter = useCallback((media: RecordedMedia) => {
+    const segment = recordedMediaSegment(media);
     return createMediaClockAdapter({
-      segments: [
-        {
-          blobId: media.blobId,
-          timelineStartMs: media.timelineOffsetMs,
-          timelineEndMs: media.timelineOffsetMs + media.durationMs,
-          mediaStartMs: 0,
-          mediaEndMs: media.durationMs,
-        },
-      ],
+      segments: segment ? [segment] : [],
       currentTimeProvider: () => recordedMediaVideoRef.current?.currentTime ?? null,
       metadataReadyProvider: () => isMediaMetadataReady(recordedMediaVideoRef.current),
       statusProvider: () => readRecordedMediaStatus(recordedMediaVideoRef.current),
@@ -367,10 +361,24 @@ function timelineToRecordedMediaTime(
   timelineTimeMs: number,
 ): number | null {
   if (!media) return null;
-  const timelineStartMs = media.timelineOffsetMs;
-  const timelineEndMs = media.timelineOffsetMs + media.durationMs;
-  if (timelineTimeMs < timelineStartMs || timelineTimeMs > timelineEndMs) return null;
-  return timelineTimeMs - timelineStartMs;
+  const segment = recordedMediaSegment(media);
+  if (!segment) return null;
+  if (timelineTimeMs < segment.timelineStartMs || timelineTimeMs > segment.timelineEndMs) {
+    return null;
+  }
+  return segment.mediaStartMs + (timelineTimeMs - segment.timelineStartMs);
+}
+
+function recordedMediaSegment(media: RecordedMedia): MediaTimelineSegment | null {
+  const mediaStartMs = Math.max(0, media.timelineOffsetMs);
+  if (mediaStartMs >= media.durationMs) return null;
+  return {
+    blobId: media.blobId,
+    timelineStartMs: 0,
+    timelineEndMs: media.durationMs - mediaStartMs,
+    mediaStartMs,
+    mediaEndMs: media.durationMs,
+  };
 }
 
 function isMediaMetadataReady(video: HTMLVideoElement | null): boolean {
@@ -470,7 +478,10 @@ function ReplayVisualOverlays({
         </div>
       ) : null}
       {showShortcut && state.shortcut ? (
-        <div className="absolute bottom-4 right-4 rounded-md border border-border bg-popover px-3 py-2 font-mono text-sm text-popover-foreground shadow-elevation-2">
+        <div
+          aria-label="回放快捷键"
+          className="absolute bottom-4 right-4 rounded-md border border-border bg-popover px-3 py-2 font-mono text-sm text-popover-foreground shadow-elevation-2"
+        >
           {state.shortcut.label}
         </div>
       ) : null}
