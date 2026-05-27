@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { forwardRef, useImperativeHandle } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode, forwardRef, useImperativeHandle } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   EditorProducerDeps,
   EditorProducerHandle,
@@ -342,6 +342,13 @@ describe("RecorderPage", () => {
     recorderPageMock.reset();
   });
 
+  afterEach(async () => {
+    cleanup();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+  });
+
   it("runs with the current editor language after producer-driven language changes", async () => {
     const { RecorderPage } = await import("../RecorderPage");
     recorderPageMock.editorValue.current = "const value: number = 1;";
@@ -364,6 +371,47 @@ describe("RecorderPage", () => {
     expect(recorderPageMock.flushPending.mock.invocationCallOrder[0]).toBeLessThan(
       recorderPageMock.trigger.mock.invocationCallOrder[0],
     );
+  });
+
+  it("keeps producers reusable after StrictMode idle cleanup", async () => {
+    const { RecorderPage } = await import("../RecorderPage");
+    recorderPageMock.editorValue.current = "console.log('strict-mode-ready');";
+
+    render(
+      <StrictMode>
+        <RecorderPage />
+      </StrictMode>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "开始录制" }));
+
+    await waitFor(() => expect(recorderPageMock.mediaRecorder.start).toHaveBeenCalledWith(recorderPageMock.stream));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    expect(recorderPageMock.runtimeProducer.dispose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "运行代码" }));
+
+    await waitFor(() =>
+      expect(recorderPageMock.trigger).toHaveBeenCalledWith({
+        language: "javascript",
+        source: "console.log('strict-mode-ready');",
+      }),
+    );
+  });
+
+  it("disposes producers when the recorder page unmounts before recording starts", async () => {
+    const { RecorderPage } = await import("../RecorderPage");
+
+    const { unmount } = render(<RecorderPage />);
+    unmount();
+
+    await waitFor(() => expect(recorderPageMock.runtimeProducer.dispose).toHaveBeenCalled());
+    expect(recorderPageMock.editorProducer.dispose).toHaveBeenCalled();
+    expect(recorderPageMock.pointerProducer.dispose).toHaveBeenCalled();
+    expect(recorderPageMock.shortcutProducer.dispose).toHaveBeenCalled();
+    expect(recorderPageMock.mediaProducer.dispose).toHaveBeenCalled();
   });
 
   it("reports camera preview position changes to the media producer", async () => {

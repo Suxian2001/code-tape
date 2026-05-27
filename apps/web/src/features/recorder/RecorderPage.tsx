@@ -54,6 +54,7 @@ const INITIAL_CAMERA_POSITION: CameraPositionPayload = { x: 0.85, y: 0.85 };
 
 const APP_VERSION = "0.0.0";
 const FONT_SIZE_OPTIONS = [12, 14, 16, 18, 20] as const;
+const IDLE_CLEANUP_GRACE_MS = 50;
 
 type DeviceOptions = {
   audio: DeviceInfo[];
@@ -75,6 +76,8 @@ export function RecorderPage() {
   const startInFlightRef = useRef(false);
   const startTokenRef = useRef(0);
   const stopTokenRef = useRef(0);
+  const idleCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resourcesCleanedUpRef = useRef(false);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [persistenceNotice, setPersistenceNotice] = useState<string | null>(null);
 
@@ -253,13 +256,22 @@ export function RecorderPage() {
   useEffect(
     () => {
       mountedRef.current = true;
+      resourcesCleanedUpRef.current = false;
+      if (idleCleanupTimerRef.current) {
+        clearTimeout(idleCleanupTimerRef.current);
+        idleCleanupTimerRef.current = null;
+      }
       return () => {
         mountedRef.current = false;
+        const wasStarting = startInFlightRef.current;
         startInFlightRef.current = false;
         startTokenRef.current += 1;
         stopTokenRef.current += 1;
-        const isFinalizing = isFinalizingRecordingStatus(stack.controller.state.status);
-        if (!isFinalizing) {
+        const status = stack.controller.state.status;
+        const isFinalizing = isFinalizingRecordingStatus(status);
+        const cleanupRecordingResources = () => {
+          if (resourcesCleanedUpRef.current) return;
+          resourcesCleanedUpRef.current = true;
           stack.controller.reset();
           const recorder = mediaRecorderRef.current;
           mediaRecorderRef.current = null;
@@ -267,6 +279,14 @@ export function RecorderPage() {
             console.warn("[recorder-page] cleanup media stop failed:", err);
           });
           stack.devices.release();
+        };
+        if (status === "idle" && !wasStarting) {
+          idleCleanupTimerRef.current = setTimeout(() => {
+            idleCleanupTimerRef.current = null;
+            cleanupRecordingResources();
+          }, IDLE_CLEANUP_GRACE_MS);
+        } else if (!isFinalizing) {
+          cleanupRecordingResources();
         }
       };
     },
