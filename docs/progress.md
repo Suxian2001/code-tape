@@ -2,14 +2,13 @@
 
 > 本文件由 GitHub Actions 自动生成，请勿手动修改。
 
-更新时间：2026-05-27T01:57:17Z
+更新时间：2026-05-27T02:02:21Z
 
 ## 当前任务
 
 | GitHub 用户 | 当前 Issue | 认领时间 |
 | --- | --- | --- |
 | ceilf6 | #78 [P0] 录制到回放主链路 Playwright e2e | 2026-05-27 01:19:18Z |
-| Suxian2001 | #79 [P0] 回放缺失媒体降级提示与纯事件流体验 | 2026-05-26 14:37:58Z |
 
 ## 积分总览
 
@@ -18,14 +17,15 @@
 | cecilyw | 2.25 | 0.00 | 0.00 | 2.25 |
 | ceilf6 | 17.25 | 3.25 | 0.00 | 20.50 |
 | JunMang01 | 3.00 | 0.00 | 0.00 | 3.00 |
-| MINTPIPERAS | 6.25 | 0.75 | 0.00 | 7.00 |
-| Suxian2001 | 1.75 | 4.50 | 0.00 | 6.25 |
+| MINTPIPERAS | 6.25 | 1.50 | 0.00 | 7.75 |
+| Suxian2001 | 4.00 | 4.50 | 0.00 | 8.50 |
 | yangchloeeeee | 9.25 | 3.75 | 0.00 | 13.00 |
 
 ## 最近流水
 
 | 时间 | 类型 | Issue | PR | 变更 |
 | --- | --- | --- | --- | --- |
+| 2026-05-27 02:02:21Z | feature_merge | #79 | #82 | Suxian2001 +2.25, MINTPIPERAS +0.75 |
 | 2026-05-27 01:57:17Z | feature_merge | #77 | #81 | yangchloeeeee +2.25, ceilf6 +0.75 |
 | 2026-05-27 01:09:35Z | feature_merge | #76 | #80 | ceilf6 +3.75, yangchloeeeee +1.25 |
 | 2026-05-26 06:53:35Z | feature_merge | #58 | #73 | cecilyw +2.25, Suxian2001 +0.75 |
@@ -45,4 +45,3 @@
 | 2026-05-22 10:53:42Z | feature_merge | #7 | #18 | yangchloeeeee +0.75, ceilf6 +0.25 |
 | 2026-05-22 09:42:30Z | feature_merge | #5 | #17 | Suxian2001 +0.75, ceilf6 +0.25 |
 | 2026-05-22 09:17:16Z | feature_merge | #8 | #16 | ceilf6 +0.75, MINTPIPERAS +0.25 |
-| 2026-05-22 08:54:11Z | feature_merge | #9 | #15 | MINTPIPERAS +0.75, ceilf6 +0.25 |
