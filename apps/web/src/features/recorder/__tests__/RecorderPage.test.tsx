@@ -344,7 +344,9 @@ describe("RecorderPage", () => {
 
   afterEach(async () => {
     cleanup();
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
   });
 
   it("runs with the current editor language after producer-driven language changes", async () => {
@@ -380,9 +382,13 @@ describe("RecorderPage", () => {
         <RecorderPage />
       </StrictMode>,
     );
+
     fireEvent.click(screen.getByRole("button", { name: "开始录制" }));
 
     await waitFor(() => expect(recorderPageMock.mediaRecorder.start).toHaveBeenCalledWith(recorderPageMock.stream));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
     expect(recorderPageMock.runtimeProducer.dispose).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "运行代码" }));
