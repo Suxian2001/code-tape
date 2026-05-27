@@ -258,8 +258,11 @@ export function RecorderPage() {
         startInFlightRef.current = false;
         startTokenRef.current += 1;
         stopTokenRef.current += 1;
-        const isFinalizing = isFinalizingRecordingStatus(stack.controller.state.status);
-        if (!isFinalizing) {
+        const status = stack.controller.state.status;
+        const isFinalizing = isFinalizingRecordingStatus(status);
+        if (status === "idle") {
+          stack.devices.release();
+        } else if (!isFinalizing) {
           stack.controller.reset();
           const recorder = mediaRecorderRef.current;
           mediaRecorderRef.current = null;

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { forwardRef, useImperativeHandle } from "react";
+import { StrictMode, forwardRef, useImperativeHandle } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   EditorProducerDeps,
@@ -363,6 +363,30 @@ describe("RecorderPage", () => {
     expect(recorderPageMock.flushPending).toHaveBeenCalledTimes(1);
     expect(recorderPageMock.flushPending.mock.invocationCallOrder[0]).toBeLessThan(
       recorderPageMock.trigger.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("keeps producers reusable after StrictMode idle cleanup", async () => {
+    const { RecorderPage } = await import("../RecorderPage");
+    recorderPageMock.editorValue.current = "console.log('strict-mode-ready');";
+
+    render(
+      <StrictMode>
+        <RecorderPage />
+      </StrictMode>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "开始录制" }));
+
+    await waitFor(() => expect(recorderPageMock.mediaRecorder.start).toHaveBeenCalledWith(recorderPageMock.stream));
+    expect(recorderPageMock.runtimeProducer.dispose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "运行代码" }));
+
+    await waitFor(() =>
+      expect(recorderPageMock.trigger).toHaveBeenCalledWith({
+        language: "javascript",
+        source: "console.log('strict-mode-ready');",
+      }),
     );
   });
 

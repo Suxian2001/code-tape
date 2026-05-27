@@ -1,0 +1,180 @@
+import { expect, test, type Page } from "@playwright/test";
+
+type StoredRecording = {
+  meta: {
+    durationMs: number;
+  };
+  events: Array<{
+    type: string;
+    timestampMs: number;
+    payload: Record<string, unknown>;
+  }>;
+};
+
+const DB_NAME = "code-tape";
+const FIRST_OUTPUT = "run:seek-before";
+const LONG_INPUT = "abcdefghijklmnopqrstuvwxyz1234";
+const FINAL_OUTPUT = `run:seek-after:${LONG_INPUT.length}`;
+
+test("records, saves, replays, seeks, and keeps content-change events debounced", async ({
+  page,
+}) => {
+  const runtimeErrors = collectRuntimeErrors(page);
+
+  await page.goto("/record", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("[data-code-editor] .monaco-editor")).toBeVisible();
+
+  await page.getByLabel("麦克风设备").selectOption("");
+  await page.getByLabel("摄像头设备").selectOption("");
+
+  await page.getByRole("button", { name: "开始录制" }).click();
+  await expect(page.getByLabel("录制状态：录制中")).toBeVisible();
+
+  await typeInEditor(
+    page,
+    `document.body.textContent = "seek-before";\nconsole.log("${FIRST_OUTPUT}");\n`,
+  );
+  await runCodeAndWaitForPreview(page, "seek-before");
+
+  await page.waitForTimeout(250);
+  await page.getByRole("button", { name: "暂停录制" }).click();
+  await expect(page.getByLabel("录制状态：已暂停")).toBeVisible();
+  await page.waitForTimeout(100);
+  await page.getByRole("button", { name: "继续录制" }).click();
+  await expect(page.getByLabel("录制状态：录制中")).toBeVisible();
+
+  await typeInEditor(
+    page,
+    `const typed = "${LONG_INPUT}";\ndocument.body.textContent = "seek-after:" + typed.length;\nconsole.log("run:seek-after:" + typed.length);\n`,
+  );
+  await runCodeAndWaitForPreview(page, `seek-after:${LONG_INPUT.length}`);
+  await page.waitForTimeout(250);
+
+  await page.getByRole("button", { name: "停止录制" }).click();
+  await page.waitForURL(/\/replay\/[^/]+$/);
+  await expect(page.getByRole("button", { name: "播放" })).toBeEnabled();
+
+  const recordingId = recordingIdFromUrl(page.url());
+  const stored = await readStoredRecording(page, recordingId);
+  expect(stored).not.toBeNull();
+
+  const recording = stored!;
+  const contentChanges = recording.events.filter((event) => event.type === "content-change");
+  const runOutputs = recording.events.filter((event) => event.type === "run-output");
+  const firstRunOutput = runOutputs.find((event) =>
+    Array.isArray(event.payload.stdout)
+    && event.payload.stdout.includes(FIRST_OUTPUT),
+  );
+  const finalRunOutput = runOutputs.find((event) =>
+    Array.isArray(event.payload.stdout)
+    && event.payload.stdout.includes(FINAL_OUTPUT),
+  );
+
+  expect(recording.events.some((event) => event.type === "record-pause")).toBe(true);
+  expect(recording.events.some((event) => event.type === "record-resume")).toBe(true);
+  expect(recording.events.some((event) => event.type === "record-stop")).toBe(true);
+  expect(contentChanges.length).toBeGreaterThan(0);
+  expect(contentChanges.length).toBeLessThan(30);
+  expect(contentChanges.at(-1)?.payload.code).toContain(LONG_INPUT);
+  expect(firstRunOutput).toBeTruthy();
+  expect(finalRunOutput).toBeTruthy();
+
+  await page.getByRole("button", { name: "播放" }).click();
+  await expect(page.getByRole("button", { name: "暂停" })).toBeEnabled();
+  await page.getByRole("button", { name: "暂停" }).click();
+  await expect(page.getByRole("button", { name: "播放" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "倍速" }).click();
+  await page.getByRole("option", { name: "2x" }).click();
+  await expect(page.getByRole("option", { name: "2x" })).toHaveAttribute("aria-selected", "true");
+
+  const runtimeOutput = page.getByRole("region", { name: "Runtime output" });
+  await seekByProgress(page, firstRunOutput!.timestampMs + 20, recording.meta.durationMs);
+  await expect(page.locator("[data-code-editor]")).toContainText("seek-before");
+  await expect(page.locator("[data-code-editor]")).not.toContainText(LONG_INPUT);
+  await expect(runtimeOutput.getByText(FIRST_OUTPUT, { exact: true })).toBeVisible();
+  await expect(runtimeOutput.getByText(FINAL_OUTPUT, { exact: true })).toHaveCount(0);
+
+  await seekByProgress(page, finalRunOutput!.timestampMs + 20, recording.meta.durationMs);
+  await expect(page.locator("[data-code-editor]")).toContainText(LONG_INPUT);
+  await expect(runtimeOutput.getByText(FINAL_OUTPUT, { exact: true })).toBeVisible();
+
+  expect(runtimeErrors.filter((message) => /monaco|worker|indexeddb/i.test(message))).toEqual([]);
+});
+
+function collectRuntimeErrors(page: Page): string[] {
+  const runtimeErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") runtimeErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => runtimeErrors.push(error.message));
+  return runtimeErrors;
+}
+
+async function typeInEditor(page: Page, source: string): Promise<void> {
+  await page.locator("[data-code-editor] .monaco-editor").click();
+  await page.keyboard.type(source, { delay: 2 });
+  await expect(page.locator("[data-code-editor]")).toContainText(source.split("\n")[0] ?? source);
+}
+
+async function runCodeAndWaitForPreview(page: Page, expectedText: string): Promise<void> {
+  await page.getByRole("button", { name: "运行代码" }).click();
+  await expect(
+    page.frameLocator('iframe[title="code-tape preview"]').locator("body"),
+  ).toContainText(expectedText);
+}
+
+function recordingIdFromUrl(url: string): string {
+  const parsed = new URL(url);
+  const match = parsed.pathname.match(/\/replay\/([^/]+)$/);
+  if (!match) throw new Error(`Could not read replay id from ${url}`);
+  return decodeURIComponent(match[1]);
+}
+
+async function readStoredRecording(page: Page, recordingId: string): Promise<StoredRecording | null> {
+  return page.evaluate(
+    async ({ databaseName, id }) => {
+      const openRequest = indexedDB.open(databaseName, 1);
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        openRequest.onerror = () => reject(openRequest.error);
+        openRequest.onsuccess = () => resolve(openRequest.result);
+      });
+      try {
+        const tx = db.transaction("recordings", "readonly");
+        const request = tx.objectStore("recordings").get(id);
+        const stored = await new Promise<StoredRecording | null>((resolve, reject) => {
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve((request.result as StoredRecording | undefined) ?? null);
+        });
+        await new Promise<void>((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onabort = () => reject(tx.error ?? new Error("transaction aborted"));
+          tx.onerror = () => reject(tx.error ?? new Error("transaction errored"));
+        });
+        return stored;
+      } finally {
+        db.close();
+      }
+    },
+    { databaseName: DB_NAME, id: recordingId },
+  );
+}
+
+async function seekByProgress(page: Page, targetMs: number, durationMs: number): Promise<void> {
+  const percent = durationMs > 0 ? Math.max(0, Math.min(targetMs / durationMs, 1)) : 0;
+  const sliderThumb = page.locator('[aria-label="播放进度"]').first();
+  await expect(sliderThumb).toBeEnabled();
+  const box = await sliderThumb.evaluate((thumb) => {
+    const root = thumb.parentElement;
+    const rect = root?.getBoundingClientRect();
+    if (!rect) return null;
+    return {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+    };
+  });
+  if (!box) throw new Error("Replay progress slider is not visible");
+  await page.mouse.click(box.x + box.width * percent, box.y + box.height / 2);
+}
