@@ -660,7 +660,7 @@ describe("createReplayScheduler", () => {
 
     await scheduler.seek(1_850);
 
-    expect(transientTicks.at(-1)?.map((event) => event.id)).toEqual(["click-3", "s-2"]);
+    expect(transientTicks.at(-1)?.map((event) => event.id)).toEqual(["s-2", "click-3"]);
     expect(scheduler.getStableState().editor.code).toBe("after-stable");
   });
 

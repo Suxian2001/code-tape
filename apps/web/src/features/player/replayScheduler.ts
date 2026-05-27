@@ -318,7 +318,9 @@ export function createReplayScheduler(options: ReplaySchedulerOptions = {}): Rep
       targetMs,
       SEEK_SHORTCUT_WINDOW_MS,
     );
-    return [latestPointer, latestShortcut].filter((event): event is RecordingEvent => Boolean(event));
+    return [latestPointer, latestShortcut]
+      .filter((event): event is RecordingEvent => Boolean(event))
+      .sort((left, right) => left.timestampMs - right.timestampMs || left.seq - right.seq);
   };
 
   const tickOnce = () => {
