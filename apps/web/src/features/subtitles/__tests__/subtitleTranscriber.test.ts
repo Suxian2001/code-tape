@@ -43,4 +43,17 @@ describe("normalizeTranscriptionResult", () => {
       { id: "subtitle-1", startMs: 0, endMs: 3_000, text: "valid" },
     ]);
   });
+
+  it("keeps chunks with an open ended timestamp by ending them at the recording duration", () => {
+    const segments = normalizeTranscriptionResult(
+      {
+        chunks: [{ text: " final thought ", timestamp: [2.1, null] }],
+      },
+      5_000,
+    );
+
+    expect(segments).toEqual([
+      { id: "subtitle-1", startMs: 2_100, endMs: 5_000, text: "final thought" },
+    ]);
+  });
 });

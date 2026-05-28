@@ -1,5 +1,5 @@
 import { Captions, Loader2, WandSparkles } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { createSubtitleStore } from "./subtitleStore";
 import { createHuggingFaceSubtitleTranscriber } from "./subtitleTranscriber";
 import type { SubtitleSegment, SubtitleStore, SubtitleTrack, SubtitleTranscriber } from "./types";
@@ -38,11 +38,18 @@ export function SubtitlePanel({
   const [error, setError] = useState<string | null>(null);
   const activeSegment = findActiveSegment(track?.segments ?? [], currentTimeMs);
   const activeSegmentRef = useRef<HTMLButtonElement | null>(null);
+  const requestVersionRef = useRef(0);
+  const generationAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    const requestVersion = requestVersionRef.current + 1;
+    requestVersionRef.current = requestVersion;
+    generationAbortRef.current?.abort();
+    generationAbortRef.current = null;
     if (!recordingId) {
       setTrack(null);
       setStatus("idle");
+      setError(null);
       return;
     }
     let cancelled = false;
@@ -52,17 +59,19 @@ export function SubtitlePanel({
     store
       .load(recordingId)
       .then((savedTrack) => {
-        if (cancelled) return;
+        if (cancelled || requestVersionRef.current !== requestVersion) return;
         setTrack(savedTrack);
         setStatus(savedTrack ? "ready" : "idle");
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (cancelled || requestVersionRef.current !== requestVersion) return;
         setError(formatSubtitleError(err));
         setStatus("error");
       });
     return () => {
       cancelled = true;
+      generationAbortRef.current?.abort();
+      generationAbortRef.current = null;
     };
   }, [recordingId, store]);
 
@@ -70,24 +79,42 @@ export function SubtitlePanel({
     activeSegmentRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [activeSegment?.id]);
 
-  const canGenerate = Boolean(recordingId && mediaBlob && hasAudio && status !== "generating");
+  const canGenerate = Boolean(
+    recordingId && mediaBlob && hasAudio && status !== "loading" && status !== "generating",
+  );
   const generateSubtitles = async () => {
     if (!recordingId || !mediaBlob || !hasAudio) return;
+    const requestVersion = requestVersionRef.current + 1;
+    requestVersionRef.current = requestVersion;
+    generationAbortRef.current?.abort();
+    const abortController = new AbortController();
+    generationAbortRef.current = abortController;
     setStatus("generating");
     setError(null);
     try {
-      const draft = await transcriber.transcribe({ mediaBlob, durationMs });
+      const draft = await transcriber.transcribe({
+        mediaBlob,
+        durationMs,
+        signal: abortController.signal,
+      });
+      if (!isCurrentGeneration(requestVersionRef, requestVersion, abortController)) return;
       const nextTrack: SubtitleTrack = {
         recordingId,
         generatedAt: new Date().toISOString(),
         ...draft,
       };
       await store.save(nextTrack);
+      if (!isCurrentGeneration(requestVersionRef, requestVersion, abortController)) return;
       setTrack(nextTrack);
       setStatus("ready");
     } catch (err) {
+      if (abortController.signal.aborted || requestVersionRef.current !== requestVersion) return;
       setError(formatSubtitleError(err));
       setStatus("error");
+    } finally {
+      if (generationAbortRef.current === abortController) {
+        generationAbortRef.current = null;
+      }
     }
   };
 
@@ -163,6 +190,14 @@ export function SubtitlePanel({
       )}
     </section>
   );
+}
+
+function isCurrentGeneration(
+  requestVersionRef: MutableRefObject<number>,
+  requestVersion: number,
+  abortController: AbortController,
+): boolean {
+  return !abortController.signal.aborted && requestVersionRef.current === requestVersion;
 }
 
 function findActiveSegment(

@@ -38,7 +38,7 @@ export function normalizeTranscriptionResult(
 ): SubtitleSegment[] {
   const chunks = Array.isArray(result.chunks) ? result.chunks : [];
   const segments = chunks
-    .map((chunk, index) => segmentFromChunk(chunk, index, durationMs))
+    .map((chunk, index) => segmentFromChunk(chunk, index, durationMs, chunks[index + 1]))
     .filter((segment): segment is SubtitleSegment => Boolean(segment));
 
   if (segments.length > 0) return reindexSegments(segments);
@@ -100,14 +100,16 @@ function segmentFromChunk(
   value: unknown,
   index: number,
   durationMs: number,
+  nextValue: unknown,
 ): SubtitleSegment | null {
   if (!isPlainObject(value)) return null;
   const chunk = value as RawAsrChunk;
   const text = typeof chunk.text === "string" ? chunk.text.trim() : "";
   if (!text) return null;
   const [startSec, endSec] = readTimestamp(chunk.timestamp);
+  const fallbackEndSec = getOpenEndFallbackSec(nextValue, startSec, durationMs);
   const startMs = clampMs(secondsToMs(startSec), durationMs);
-  const endMs = clampMs(secondsToMs(endSec), durationMs);
+  const endMs = clampMs(secondsToMs(endSec ?? fallbackEndSec), durationMs);
   if (endMs <= startMs) return null;
   return { id: `subtitle-${index + 1}`, startMs, endMs, text };
 }
@@ -116,13 +118,27 @@ function reindexSegments(segments: SubtitleSegment[]): SubtitleSegment[] {
   return segments.map((segment, index) => ({ ...segment, id: `subtitle-${index + 1}` }));
 }
 
-function readTimestamp(value: unknown): [number, number] {
-  if (!Array.isArray(value)) return [0, 0];
+function readTimestamp(value: unknown): [number, number | null] {
+  if (!Array.isArray(value)) return [0, null];
   const [start, end] = value;
   return [
     typeof start === "number" && Number.isFinite(start) ? start : 0,
-    typeof end === "number" && Number.isFinite(end) ? end : 0,
+    typeof end === "number" && Number.isFinite(end) ? end : null,
   ];
+}
+
+function getOpenEndFallbackSec(nextValue: unknown, startSec: number, durationMs: number): number {
+  const nextStartSec = readChunkStartSec(nextValue);
+  if (nextStartSec !== null && nextStartSec > startSec) return nextStartSec;
+  return Math.max(0, durationMs) / 1000;
+}
+
+function readChunkStartSec(value: unknown): number | null {
+  if (!isPlainObject(value)) return null;
+  const timestamp = (value as RawAsrChunk).timestamp;
+  if (!Array.isArray(timestamp)) return null;
+  const [start] = timestamp;
+  return typeof start === "number" && Number.isFinite(start) ? start : null;
 }
 
 function secondsToMs(value: number): number {
