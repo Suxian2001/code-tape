@@ -88,6 +88,55 @@ test("PUT rejects wrong HTTP method", async () => {
   assert.equal(response.status, 405);
 });
 
+test("PUT accepts content-type with parameters when base mime matches target", async () => {
+  const storage = createLocalDevObjectStorage({ publicBaseUrl: PUBLIC_BASE_URL });
+  const handler = createLocalDevObjectStorageHandler(storage);
+  const objectKey = "recordings/rec-1/package/manifest.json";
+  const body = new TextEncoder().encode("{}");
+  const target = storage.createUploadTarget({
+    kind: "manifest",
+    objectKey,
+    mimeType: "application/json",
+    maxSizeBytes: body.byteLength,
+  });
+
+  const response = await handler(
+    new Request(target.url, {
+      method: "PUT",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body,
+    }),
+  );
+  assert.ok(response);
+  assert.equal(response.status, 204);
+  assert.ok(await storage.getObject(objectKey));
+});
+
+test("PUT rejects oversize content-length before reading body", async () => {
+  const storage = createLocalDevObjectStorage({ publicBaseUrl: PUBLIC_BASE_URL });
+  const handler = createLocalDevObjectStorageHandler(storage);
+  const target = storage.createUploadTarget({
+    kind: "manifest",
+    objectKey: "recordings/rec-1/package/manifest.json",
+    mimeType: "application/json",
+    maxSizeBytes: 4,
+  });
+  const body = new TextEncoder().encode("{}");
+
+  const response = await handler(
+    new Request(target.url, {
+      method: "PUT",
+      headers: {
+        ...target.headers,
+        "content-length": String(body.byteLength + 100),
+      },
+      body,
+    }),
+  );
+  assert.ok(response);
+  assert.equal(response.status, 413);
+});
+
 test("PUT rejects missing or mismatched content-type", async () => {
   const storage = createLocalDevObjectStorage({ publicBaseUrl: PUBLIC_BASE_URL });
   const handler = createLocalDevObjectStorageHandler(storage);

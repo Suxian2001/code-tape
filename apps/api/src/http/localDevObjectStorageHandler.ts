@@ -101,8 +101,8 @@ async function handleUpload(
     );
   }
 
-  const body = new Uint8Array(await request.arrayBuffer());
-  if (body.byteLength > target.maxSizeBytes) {
+  const bodyResult = await readUploadBody(request, target.maxSizeBytes);
+  if (!bodyResult.ok) {
     return withLocalDevCors(
       request,
       objectStorageError(
@@ -112,6 +112,7 @@ async function handleUpload(
       "PUT, OPTIONS",
     );
   }
+  const body = bodyResult.body;
 
   await storage.putObject({
     key: target.objectKey,
@@ -165,7 +166,62 @@ async function handleDownload(
 }
 
 function mimeTypesMatch(actual: string, expected: string): boolean {
-  return actual.trim().toLowerCase() === expected.trim().toLowerCase();
+  return mediaTypeBase(actual) === mediaTypeBase(expected);
+}
+
+function mediaTypeBase(value: string): string {
+  const semicolon = value.indexOf(";");
+  const base = semicolon === -1 ? value : value.slice(0, semicolon);
+  return base.trim().toLowerCase();
+}
+
+async function readUploadBody(
+  request: Request,
+  maxSizeBytes: number,
+): Promise<{ ok: true; body: Uint8Array } | { ok: false }> {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength) {
+    const declared = Number(contentLength);
+    if (Number.isFinite(declared) && declared > maxSizeBytes) {
+      return { ok: false };
+    }
+  }
+
+  if (!request.body) {
+    return { ok: true, body: new Uint8Array() };
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (!value) {
+        continue;
+      }
+      total += value.byteLength;
+      if (total > maxSizeBytes) {
+        await reader.cancel();
+        return { ok: false };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    await reader.cancel().catch(() => undefined);
+    throw new Error("failed to read upload body");
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { ok: true, body };
 }
 
 function methodNotAllowed(message: string): Response {
