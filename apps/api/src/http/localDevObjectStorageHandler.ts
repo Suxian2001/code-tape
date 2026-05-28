@@ -36,7 +36,15 @@ export function createLocalDevObjectStorageHandler(
       ),
     );
     if (uploadMatch) {
-      return handleUpload(request, storage, uploadMatch[1]!);
+      const uploadToken = decodePathSegment(uploadMatch[1]!);
+      if (!uploadToken) {
+        return withLocalDevCors(
+          request,
+          objectStorageError("bad-request", "invalid upload token encoding"),
+          "PUT, OPTIONS",
+        );
+      }
+      return handleUpload(request, storage, uploadToken);
     }
 
     const objectMatch = url.pathname.match(
@@ -253,6 +261,14 @@ function objectStorageError(code: CloudApiErrorCode, message: string): Response 
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function decodePathSegment(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

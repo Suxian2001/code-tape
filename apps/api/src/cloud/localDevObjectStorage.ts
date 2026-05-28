@@ -28,7 +28,7 @@ const OBJECT_PATH_PREFIX = "/dev/object-storage/objects/";
 
 export function buildLocalDevUploadUrl(publicBaseUrl: string, uploadToken: string): string {
   const base = publicBaseUrl.replace(/\/+$/u, "");
-  return `${base}${UPLOAD_PATH_PREFIX}${uploadToken}`;
+  return `${base}${UPLOAD_PATH_PREFIX}${encodeURIComponent(uploadToken)}`;
 }
 
 export function buildLocalDevObjectUrl(publicBaseUrl: string, objectKey: string): string {

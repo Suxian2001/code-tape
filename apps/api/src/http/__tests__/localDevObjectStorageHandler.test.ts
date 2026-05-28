@@ -112,6 +112,36 @@ test("PUT accepts content-type with parameters when base mime matches target", a
   assert.ok(await storage.getObject(objectKey));
 });
 
+test("PUT accepts upload tokens that need URL path encoding", async () => {
+  const storage = createLocalDevObjectStorage({
+    publicBaseUrl: PUBLIC_BASE_URL,
+    createUploadToken: () => "token/with ?#% chars",
+  });
+  const handler = createLocalDevObjectStorageHandler(storage);
+  const objectKey = "recordings/rec-1/package/manifest.json";
+  const body = new TextEncoder().encode("{}");
+  const target = storage.createUploadTarget({
+    kind: "manifest",
+    objectKey,
+    mimeType: "application/json",
+    maxSizeBytes: body.byteLength,
+  });
+
+  assert.match(target.url, /token%2Fwith%20%3F%23%25%20chars/u);
+
+  const response = await handler(
+    new Request(target.url, {
+      method: "PUT",
+      headers: target.headers,
+      body,
+    }),
+  );
+
+  assert.ok(response);
+  assert.equal(response.status, 204);
+  assert.ok(await storage.getObject(objectKey));
+});
+
 test("PUT rejects oversize content-length before reading body", async () => {
   const storage = createLocalDevObjectStorage({ publicBaseUrl: PUBLIC_BASE_URL });
   const handler = createLocalDevObjectStorageHandler(storage);
