@@ -55,9 +55,13 @@ export function createHuggingFaceSubtitleTranscriber(
   let pipelinePromise: Promise<AsrPipeline> | null = null;
   const getPipeline = () => {
     if (!pipelinePromise) {
-      pipelinePromise = options.pipelineFactory
+      pipelinePromise = (options.pipelineFactory
         ? options.pipelineFactory("automatic-speech-recognition", model)
-        : loadDefaultPipeline("automatic-speech-recognition", model);
+        : loadDefaultPipeline("automatic-speech-recognition", model)
+      ).catch((error: unknown) => {
+        pipelinePromise = null;
+        throw error;
+      });
     }
     return pipelinePromise;
   };

@@ -1,5 +1,20 @@
-import { describe, expect, it } from "vitest";
-import { normalizeTranscriptionResult } from "../subtitleTranscriber";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createHuggingFaceSubtitleTranscriber, normalizeTranscriptionResult } from "../subtitleTranscriber";
+
+const originalCreateObjectUrl = URL.createObjectURL;
+const originalRevokeObjectUrl = URL.revokeObjectURL;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: originalCreateObjectUrl,
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: originalRevokeObjectUrl,
+  });
+});
 
 describe("normalizeTranscriptionResult", () => {
   it("turns Hugging Face ASR chunks into millisecond subtitle segments", () => {
@@ -55,5 +70,42 @@ describe("normalizeTranscriptionResult", () => {
     expect(segments).toEqual([
       { id: "subtitle-1", startMs: 2_100, endMs: 5_000, text: "final thought" },
     ]);
+  });
+
+  it("retries pipeline initialization after a failed model load", async () => {
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:subtitle-source"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const pipeline = vi.fn(async () => ({ chunks: [] }));
+    const pipelineFactory = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary model load failure"))
+      .mockResolvedValueOnce(pipeline);
+    const transcriber = createHuggingFaceSubtitleTranscriber({ pipelineFactory });
+
+    await expect(
+      transcriber.transcribe({
+        mediaBlob: new Blob(["audio"], { type: "audio/webm" }),
+        durationMs: 1_000,
+      }),
+    ).rejects.toThrow("temporary model load failure");
+
+    await expect(
+      transcriber.transcribe({
+        mediaBlob: new Blob(["audio"], { type: "audio/webm" }),
+        durationMs: 1_000,
+      }),
+    ).resolves.toEqual({
+      model: "onnx-community/whisper-tiny",
+      source: "huggingface-local",
+      language: undefined,
+      segments: [],
+    });
+    expect(pipelineFactory).toHaveBeenCalledTimes(2);
   });
 });
