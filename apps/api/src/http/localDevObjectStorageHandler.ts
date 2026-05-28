@@ -73,24 +73,26 @@ async function handleUpload(
     return withLocalDevCors(request, methodNotAllowed("upload requires PUT method"), "PUT, OPTIONS");
   }
 
-  const target = storage.getPendingUploadTarget(uploadToken);
-  if (!target) {
-    if (storage.isConsumedUploadToken(uploadToken)) {
-      return withLocalDevCors(
-        request,
-        objectStorageError("upload-session-conflict", "upload target already consumed"),
-        "PUT, OPTIONS",
-      );
-    }
+  const claim = storage.claimPendingUploadTarget(uploadToken);
+  if (claim.status === "consumed") {
+    return withLocalDevCors(
+      request,
+      objectStorageError("upload-session-conflict", "upload target already consumed"),
+      "PUT, OPTIONS",
+    );
+  }
+  if (claim.status === "not-found") {
     return withLocalDevCors(
       request,
       objectStorageError("not-found", "upload target not found"),
       "PUT, OPTIONS",
     );
   }
+  const target = claim.target;
 
   const contentType = request.headers.get("content-type");
   if (!contentType || !mimeTypesMatch(contentType, target.mimeType)) {
+    storage.finalizeConsumedUploadToken(uploadToken);
     return withLocalDevCors(
       request,
       objectStorageError(
@@ -103,6 +105,7 @@ async function handleUpload(
 
   const bodyResult = await readUploadBody(request, target.maxSizeBytes);
   if (!bodyResult.ok) {
+    storage.finalizeConsumedUploadToken(uploadToken);
     return withLocalDevCors(
       request,
       objectStorageError(
@@ -119,7 +122,7 @@ async function handleUpload(
     body,
     contentType: target.mimeType,
   });
-  storage.markUploadTokenConsumed(uploadToken);
+  storage.finalizeConsumedUploadToken(uploadToken);
   return withLocalDevCors(request, new Response(null, { status: 204 }), "PUT, OPTIONS");
 }
 

@@ -6,17 +6,21 @@ export type LocalDevObjectStorageOptions = {
   createUploadToken?: () => string;
 };
 
-type PendingUploadTarget = {
+export type PendingUploadTarget = {
   objectKey: string;
   mimeType: string;
   maxSizeBytes: number;
   kind: RecordingAssetKind;
 };
 
+export type ClaimPendingUploadResult =
+  | { status: "claimed"; target: PendingUploadTarget }
+  | { status: "consumed" }
+  | { status: "not-found" };
+
 export type LocalDevObjectStorage = ObjectStorage & {
-  getPendingUploadTarget(token: string): PendingUploadTarget | null;
-  isConsumedUploadToken(token: string): boolean;
-  markUploadTokenConsumed(token: string): void;
+  claimPendingUploadTarget(token: string): ClaimPendingUploadResult;
+  finalizeConsumedUploadToken(token: string): void;
 };
 
 const UPLOAD_PATH_PREFIX = "/dev/object-storage/uploads/";
@@ -49,6 +53,7 @@ export function createLocalDevObjectStorage(
 ): LocalDevObjectStorage {
   const objects = new Map<string, StoredObject>();
   const pendingUploads = new Map<string, PendingUploadTarget>();
+  const inFlightUploadTokens = new Set<string>();
   const consumedUploadTokens = new Set<string>();
   const createUploadToken = options.createUploadToken ?? (() => crypto.randomUUID());
   const publicBaseUrl = options.publicBaseUrl;
@@ -75,14 +80,20 @@ export function createLocalDevObjectStorage(
         maxSizeBytes: input.maxSizeBytes,
       };
     },
-    getPendingUploadTarget(token: string): PendingUploadTarget | null {
-      return pendingUploads.get(token) ?? null;
+    claimPendingUploadTarget(token: string): ClaimPendingUploadResult {
+      const target = pendingUploads.get(token);
+      if (target) {
+        pendingUploads.delete(token);
+        inFlightUploadTokens.add(token);
+        return { status: "claimed", target };
+      }
+      if (inFlightUploadTokens.has(token) || consumedUploadTokens.has(token)) {
+        return { status: "consumed" };
+      }
+      return { status: "not-found" };
     },
-    isConsumedUploadToken(token: string): boolean {
-      return consumedUploadTokens.has(token);
-    },
-    markUploadTokenConsumed(token: string): void {
-      pendingUploads.delete(token);
+    finalizeConsumedUploadToken(token: string): void {
+      inFlightUploadTokens.delete(token);
       consumedUploadTokens.add(token);
     },
     async putObject(input: PutObjectInput): Promise<void> {

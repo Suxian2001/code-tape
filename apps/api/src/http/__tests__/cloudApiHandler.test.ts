@@ -19,7 +19,7 @@ function createTestApiHandler(
     objectStorage,
   });
   const cloud = createCloudApiHandler({ service, createRequestId });
-  if ("getPendingUploadTarget" in objectStorage) {
+  if ("claimPendingUploadTarget" in objectStorage) {
     return createApiHandler({
       cloud,
       objectStorage: createLocalDevObjectStorageHandler(objectStorage),

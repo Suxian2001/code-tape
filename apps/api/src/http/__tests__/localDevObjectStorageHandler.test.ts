@@ -140,16 +140,22 @@ test("PUT rejects oversize content-length before reading body", async () => {
 test("PUT rejects missing or mismatched content-type", async () => {
   const storage = createLocalDevObjectStorage({ publicBaseUrl: PUBLIC_BASE_URL });
   const handler = createLocalDevObjectStorageHandler(storage);
-  const target = storage.createUploadTarget({
+  const body = new TextEncoder().encode("{}");
+  const missingTypeTarget = storage.createUploadTarget({
     kind: "manifest",
     objectKey: "recordings/rec-1/package/manifest.json",
     mimeType: "application/json",
     maxSizeBytes: 32,
   });
-  const body = new TextEncoder().encode("{}");
+  const wrongTypeTarget = storage.createUploadTarget({
+    kind: "manifest",
+    objectKey: "recordings/rec-2/package/manifest.json",
+    mimeType: "application/json",
+    maxSizeBytes: 32,
+  });
 
   const missingType = await handler(
-    new Request(target.url, {
+    new Request(missingTypeTarget.url, {
       method: "PUT",
       body,
     }),
@@ -158,7 +164,7 @@ test("PUT rejects missing or mismatched content-type", async () => {
   assert.equal(missingType.status, 415);
 
   const wrongType = await handler(
-    new Request(target.url, {
+    new Request(wrongTypeTarget.url, {
       method: "PUT",
       headers: { "content-type": "text/plain" },
       body,
@@ -166,6 +172,43 @@ test("PUT rejects missing or mismatched content-type", async () => {
   );
   assert.ok(wrongType);
   assert.equal(wrongType.status, 415);
+});
+
+test("concurrent PUT on same upload token allows only one success", async () => {
+  const storage = createLocalDevObjectStorage({
+    publicBaseUrl: PUBLIC_BASE_URL,
+    createUploadToken: () => "token-concurrent",
+  });
+  const handler = createLocalDevObjectStorageHandler(storage);
+  const target = storage.createUploadTarget({
+    kind: "manifest",
+    objectKey: "recordings/rec-1/package/manifest.json",
+    mimeType: "application/json",
+    maxSizeBytes: 32,
+  });
+  const body = new TextEncoder().encode("{}");
+
+  const [first, second] = await Promise.all([
+    handler(
+      new Request(target.url, {
+        method: "PUT",
+        headers: target.headers,
+        body,
+      }),
+    ),
+    handler(
+      new Request(target.url, {
+        method: "PUT",
+        headers: target.headers,
+        body,
+      }),
+    ),
+  ]);
+
+  assert.ok(first);
+  assert.ok(second);
+  const statuses = [first.status, second.status].sort((a, b) => a - b);
+  assert.deepEqual(statuses, [204, 409]);
 });
 
 test("PUT rejects unknown and consumed upload targets", async () => {
