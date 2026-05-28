@@ -1,4 +1,4 @@
-import { RECORDING_SCHEMA_VERSION } from "@code-tape/recording-schema";
+import { RECORDING_SCHEMA_VERSION, type RecordingLanguage } from "@code-tape/recording-schema";
 import type { MetadataRepository } from "./metadataRepository.js";
 import type { ObjectStorage } from "./objectStorage.js";
 import { RECORDING_ASSET_KINDS } from "./types.js";
@@ -19,6 +19,13 @@ import type {
 const REQUIRED_ASSETS: RecordingAssetKind[] = ["manifest", "meta", "events", "snapshots"];
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const RECORDING_ASSET_KIND_SET = new Set<string>(RECORDING_ASSET_KINDS);
+const RECORDING_LANGUAGES = [
+  "javascript",
+  "typescript",
+  "python",
+] as const satisfies readonly RecordingLanguage[];
+const RECORDING_LANGUAGE_SET = new Set<string>(RECORDING_LANGUAGES);
+const MAX_UPLOAD_SCALAR_LENGTH = 128;
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/u;
 
 export type CloudRecordingService = {
@@ -211,6 +218,22 @@ function validateCreateUploadSessionInput(input: CreateUploadSessionRequest): Cl
       message: `unsupported schemaVersion: ${input.schemaVersion}`,
     };
   }
+  const invalidIdempotencyKey = validateBoundedText(input.idempotencyKey, "idempotencyKey");
+  if (invalidIdempotencyKey) return invalidIdempotencyKey;
+  const invalidLocalPackageId = validateBoundedText(input.localPackageId, "localPackageId");
+  if (invalidLocalPackageId) return invalidLocalPackageId;
+  if (!Number.isSafeInteger(input.durationMs) || input.durationMs < 0) {
+    return {
+      code: "invalid-manifest",
+      message: "durationMs must be a non-negative safe integer",
+    };
+  }
+  if (!RECORDING_LANGUAGE_SET.has(input.initialLanguage)) {
+    return {
+      code: "invalid-manifest",
+      message: "initialLanguage must be one of javascript, typescript, python",
+    };
+  }
   const seenKinds = new Set<RecordingAssetKind>();
   for (const asset of input.assets) {
     if (!isRecordingAssetKind(asset.kind)) {
@@ -240,6 +263,21 @@ function validateCreateUploadSessionInput(input: CreateUploadSessionRequest): Cl
   }
   if (input.title.trim().length < 1 || input.title.trim().length > 80) {
     return { code: "invalid-manifest", message: "title must be 1 to 80 characters" };
+  }
+  return null;
+}
+
+function validateBoundedText(value: string, field: string): CloudApiError | null {
+  const trimmedLength = value.trim().length;
+  if (
+    trimmedLength < 1 ||
+    trimmedLength > MAX_UPLOAD_SCALAR_LENGTH ||
+    value.length > MAX_UPLOAD_SCALAR_LENGTH
+  ) {
+    return {
+      code: "invalid-manifest",
+      message: `${field} must be 1 to ${MAX_UPLOAD_SCALAR_LENGTH} characters`,
+    };
   }
   return null;
 }

@@ -205,6 +205,91 @@ test("cloud API rejects duplicate upload-session asset kinds with the unified er
   });
 });
 
+for (const input of [
+  {
+    name: "blank idempotency key",
+    body: await makeCreateSessionBody((request) => ({ ...request, idempotencyKey: " " })),
+    message: "idempotencyKey must be 1 to 128 characters",
+  },
+  {
+    name: "oversized idempotency key",
+    body: await makeCreateSessionBody((request) => ({
+      ...request,
+      idempotencyKey: "i".repeat(129),
+    })),
+    message: "idempotencyKey must be 1 to 128 characters",
+  },
+  {
+    name: "blank local package id",
+    body: await makeCreateSessionBody((request) => ({ ...request, localPackageId: " " })),
+    message: "localPackageId must be 1 to 128 characters",
+  },
+  {
+    name: "oversized local package id",
+    body: await makeCreateSessionBody((request) => ({
+      ...request,
+      localPackageId: "p".repeat(129),
+    })),
+    message: "localPackageId must be 1 to 128 characters",
+  },
+  {
+    name: "negative duration",
+    body: await makeCreateSessionBody((request) => ({ ...request, durationMs: -1 })),
+    message: "durationMs must be a non-negative safe integer",
+  },
+  {
+    name: "fractional duration",
+    body: await makeCreateSessionBody((request) => ({ ...request, durationMs: 1.5 })),
+    message: "durationMs must be a non-negative safe integer",
+  },
+  {
+    name: "unsafe duration",
+    body: await makeCreateSessionBody((request) => ({
+      ...request,
+      durationMs: Number.MAX_SAFE_INTEGER + 1,
+    })),
+    message: "durationMs must be a non-negative safe integer",
+  },
+  {
+    name: "unsupported initial language",
+    body: await makeCreateSessionBody((request) => ({ ...request, initialLanguage: "ruby" })),
+    message: "initialLanguage must be one of javascript, typescript, python",
+  },
+] as const) {
+  test(`cloud API rejects ${input.name} upload-session scalars with the unified error shape`, async () => {
+    const handler = createCloudApiHandler({
+      service: createCloudRecordingService({
+        metadata: createMemoryMetadataRepository(),
+        objectStorage: createMemoryObjectStorage(),
+      }),
+      createRequestId: () => `req-${input.name}`,
+    });
+
+    const response = await handler(
+      new Request("http://localhost/api/recordings/upload-sessions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-owner-token": "owner-1",
+        },
+        body: input.body,
+      }),
+    );
+    const body = (await response.json()) as {
+      error: { code: string; message: string; requestId: string };
+    };
+
+    assert.equal(response.status, 422);
+    assert.deepEqual(body, {
+      error: {
+        code: "invalid-manifest",
+        message: input.message,
+        requestId: `req-${input.name}`,
+      },
+    });
+  });
+}
+
 test("cloud API rejects idempotency key reuse with a different upload-session body", async () => {
   const handler = createCloudApiHandler({
     service: createCloudRecordingService({

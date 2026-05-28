@@ -256,6 +256,92 @@ for (const input of [
   });
 }
 
+for (const input of [
+  {
+    name: "blank idempotency key",
+    makeRequest: (request: CreateUploadSessionRequest): CreateUploadSessionRequest => ({
+      ...request,
+      idempotencyKey: " ",
+    }),
+    message: /idempotencyKey must be 1 to 128 characters/,
+  },
+  {
+    name: "oversized idempotency key",
+    makeRequest: (request: CreateUploadSessionRequest): CreateUploadSessionRequest => ({
+      ...request,
+      idempotencyKey: "i".repeat(129),
+    }),
+    message: /idempotencyKey must be 1 to 128 characters/,
+  },
+  {
+    name: "blank local package id",
+    makeRequest: (request: CreateUploadSessionRequest): CreateUploadSessionRequest => ({
+      ...request,
+      localPackageId: " ",
+    }),
+    message: /localPackageId must be 1 to 128 characters/,
+  },
+  {
+    name: "oversized local package id",
+    makeRequest: (request: CreateUploadSessionRequest): CreateUploadSessionRequest => ({
+      ...request,
+      localPackageId: "p".repeat(129),
+    }),
+    message: /localPackageId must be 1 to 128 characters/,
+  },
+  {
+    name: "negative duration",
+    makeRequest: (request: CreateUploadSessionRequest): CreateUploadSessionRequest => ({
+      ...request,
+      durationMs: -1,
+    }),
+    message: /durationMs must be a non-negative safe integer/,
+  },
+  {
+    name: "fractional duration",
+    makeRequest: (request: CreateUploadSessionRequest): CreateUploadSessionRequest => ({
+      ...request,
+      durationMs: 1.5,
+    }),
+    message: /durationMs must be a non-negative safe integer/,
+  },
+  {
+    name: "unsafe duration",
+    makeRequest: (request: CreateUploadSessionRequest): CreateUploadSessionRequest => ({
+      ...request,
+      durationMs: Number.MAX_SAFE_INTEGER + 1,
+    }),
+    message: /durationMs must be a non-negative safe integer/,
+  },
+  {
+    name: "unsupported initial language",
+    makeRequest: (request: CreateUploadSessionRequest): CreateUploadSessionRequest => ({
+      ...request,
+      initialLanguage: "ruby" as CreateUploadSessionRequest["initialLanguage"],
+    }),
+    message: /initialLanguage must be one of javascript, typescript, python/,
+  },
+] as const) {
+  test(`createUploadSession rejects ${input.name}`, async () => {
+    const service = createCloudRecordingService({
+      metadata: createMemoryMetadataRepository(),
+      objectStorage: createMemoryObjectStorage(),
+    });
+    const pkg = await makePackage();
+    const request = await makeCreateSessionRequest(pkg);
+
+    const result = await service.createUploadSession({
+      ownerId: "owner-1",
+      input: input.makeRequest(request),
+    });
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.error.code, "invalid-manifest");
+    assert.match(result.error.message, input.message);
+  });
+}
+
 test("completeUpload does not regress a completed recording back to processing", async () => {
   const metadata = createMemoryMetadataRepository();
   const service = createCloudRecordingService({
