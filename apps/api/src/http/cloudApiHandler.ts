@@ -4,6 +4,7 @@ import type {
   CloudApiError,
   CloudApiErrorCode,
   CloudResult,
+  CompleteUploadSessionRequest,
   CreateUploadSessionRequest,
   RecordingAssetKind,
 } from "../cloud/types.js";
@@ -52,6 +53,28 @@ export function createCloudApiHandler(deps: {
       const result = await deps.service.createUploadSession({ ownerId, input: input.value });
       if (!result.ok) return jsonError({ ...result.error, requestId }, requestId);
       return jsonResponse(result.value, 201, requestId);
+    }
+
+    // POST /api/recordings/upload-sessions/:sessionId/complete — 上传完成确认
+    const completeMatch = url.pathname.match(
+      /^\/api\/recordings\/upload-sessions\/([^/]+)\/complete$/,
+    );
+    if (request.method === "POST" && completeMatch) {
+      const sessionId = completeMatch[1]!;
+      const ownerId = readOwnerToken(request);
+      if (!ownerId) {
+        return jsonError(
+          { code: "unauthorized", message: "missing owner token", requestId },
+          requestId,
+        );
+      }
+      const parsed = await readJsonObject(request);
+      if (!parsed.ok) return jsonError({ ...parsed.error, requestId }, requestId);
+      const input = parseCompleteUploadSessionRequest(parsed.value);
+      if (!input.ok) return jsonError({ ...input.error, requestId }, requestId);
+      const result = await deps.service.completeUpload({ ownerId, sessionId, input: input.value });
+      if (!result.ok) return jsonError({ ...result.error, requestId }, requestId);
+      return jsonResponse(result.value, 200, requestId);
     }
 
     return jsonError({ code: "not-found", message: "route not found", requestId }, requestId);
@@ -132,6 +155,39 @@ function parseCreateUploadSessionRequest(
       hasCamera: value.hasCamera,
       assets,
     },
+  };
+}
+
+// POST /api/recordings/upload-sessions/:sessionId/complete 请求体校验
+function parseCompleteUploadSessionRequest(
+  value: Record<string, unknown>,
+): CloudResult<CompleteUploadSessionRequest> {
+  if (!Array.isArray(value.uploadedAssets)) {
+    return { ok: false, error: badRequestError() };
+  }
+
+  const uploadedAssets: CompleteUploadSessionRequest["uploadedAssets"] = [];
+  for (const asset of value.uploadedAssets) {
+    if (
+      !isJsonObject(asset) ||
+      !isString(asset.kind) ||
+      !isRecordingAssetKind(asset.kind) ||
+      !isString(asset.sha256) ||
+      !SHA256_HEX_PATTERN.test(asset.sha256) ||
+      !isPositiveSafeInteger(asset.sizeBytes)
+    ) {
+      return { ok: false, error: badRequestError() };
+    }
+    uploadedAssets.push({
+      kind: asset.kind,
+      sha256: asset.sha256,
+      sizeBytes: asset.sizeBytes,
+    });
+  }
+
+  return {
+    ok: true,
+    value: { uploadedAssets },
   };
 }
 
