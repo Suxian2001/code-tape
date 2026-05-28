@@ -256,6 +256,22 @@ test("PUT rejects unknown and consumed upload targets", async () => {
   assert.equal(second.status, 409);
 });
 
+test("GET rejects malformed object key encoding with 400", async () => {
+  const storage = createLocalDevObjectStorage({ publicBaseUrl: PUBLIC_BASE_URL });
+  const handler = createLocalDevObjectStorageHandler(storage);
+
+  const response = await handler(
+    new Request(`${PUBLIC_BASE_URL}/dev/object-storage/objects/!!!not-base64url`, {
+      method: "GET",
+    }),
+  );
+  assert.ok(response);
+  assert.equal(response.status, 400);
+  const payload = (await response.json()) as { error: { code: string; message: string } };
+  assert.equal(payload.error.code, "bad-request");
+  assert.match(payload.error.message, /invalid object key encoding/u);
+});
+
 test("GET rejects unknown objects and wrong HTTP method", async () => {
   const storage = createLocalDevObjectStorage({ publicBaseUrl: PUBLIC_BASE_URL });
   const handler = createLocalDevObjectStorageHandler(storage);

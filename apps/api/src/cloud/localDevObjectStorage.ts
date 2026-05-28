@@ -41,11 +41,26 @@ export function encodeObjectKey(objectKey: string): string {
 }
 
 export function decodeObjectKey(encoded: string): string | null {
+  if (!isCanonicalBase64Url(encoded)) {
+    return null;
+  }
+
+  let decoded: string;
   try {
-    return Buffer.from(encoded, "base64url").toString("utf8");
+    decoded = Buffer.from(encoded, "base64url").toString("utf8");
   } catch {
     return null;
   }
+
+  if (encodeObjectKey(decoded) !== encoded) {
+    return null;
+  }
+
+  return decoded;
+}
+
+function isCanonicalBase64Url(encoded: string): boolean {
+  return encoded.length > 0 && /^[A-Za-z0-9_-]+$/u.test(encoded);
 }
 
 export function createLocalDevObjectStorage(
