@@ -28,6 +28,9 @@ const STATUS_BY_ERROR: Record<CloudApiErrorCode, number> = {
 };
 const RECORDING_ASSET_KIND_SET = new Set<string>(RECORDING_ASSET_KINDS);
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/u;
+// POST .../complete 请求体严格字段白名单：只允许这些 key
+const COMPLETE_TOP_KEYS = new Set(["uploadedAssets"]);
+const COMPLETE_ASSET_KEYS = new Set(["kind", "sha256", "sizeBytes"]);
 
 export function createCloudApiHandler(deps: {
   service: CloudRecordingService;
@@ -159,9 +162,16 @@ function parseCreateUploadSessionRequest(
 }
 
 // POST /api/recordings/upload-sessions/:sessionId/complete 请求体校验
+// 严格遵循契约：只接收 uploadedAssets: [{ kind, sha256, sizeBytes }]
 function parseCompleteUploadSessionRequest(
   value: Record<string, unknown>,
 ): CloudResult<CompleteUploadSessionRequest> {
+  // 顶层 key 白名单校验：拒绝任何契约外字段
+  for (const key of Object.keys(value)) {
+    if (!COMPLETE_TOP_KEYS.has(key)) {
+      return { ok: false, error: badRequestError() };
+    }
+  }
   if (!Array.isArray(value.uploadedAssets)) {
     return { ok: false, error: badRequestError() };
   }
@@ -177,6 +187,12 @@ function parseCompleteUploadSessionRequest(
       !isPositiveSafeInteger(asset.sizeBytes)
     ) {
       return { ok: false, error: badRequestError() };
+    }
+    // asset 内字段白名单校验：拒绝 kind / sha256 / sizeBytes 之外的字段
+    for (const key of Object.keys(asset)) {
+      if (!COMPLETE_ASSET_KEYS.has(key)) {
+        return { ok: false, error: badRequestError() };
+      }
     }
     uploadedAssets.push({
       kind: asset.kind,

@@ -552,6 +552,30 @@ for (const input of [
       uploadedAssets: [{ kind: "manifest", sha256: 123, sizeBytes: "bad" }],
     }),
   },
+  {
+    name: "顶层额外字段",
+    id: "top-extra-key",
+    body: JSON.stringify({
+      uploadedAssets: [
+        { kind: "manifest", sha256: "f".repeat(64), sizeBytes: 100 },
+      ],
+      extraField: "should-be-rejected",
+    }),
+  },
+  {
+    name: "asset 内额外字段",
+    id: "asset-extra-key",
+    body: JSON.stringify({
+      uploadedAssets: [
+        {
+          kind: "manifest",
+          sha256: "f".repeat(64),
+          sizeBytes: 100,
+          mimeType: "should-be-rejected",
+        },
+      ],
+    }),
+  },
 ] as const) {
   test(`POST .../complete 对 ${input.name} 返回统一的 400 错误结构`, async () => {
     const handler = createCloudApiHandler({
