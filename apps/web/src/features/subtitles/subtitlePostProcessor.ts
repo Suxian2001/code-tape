@@ -17,7 +17,7 @@ const CHAPTER_OUTPUT_TOKEN_RESERVE = 384;
 
 type TextGenerationPipelineOptions = {
   device: "wasm";
-  dtype: "q4";
+  dtype: "q4" | "q8";
 };
 
 type TextGenerationPipeline = (
@@ -44,14 +44,18 @@ export function createHuggingFaceSubtitlePostProcessor(
   options: HuggingFaceSubtitlePostProcessorOptions = {},
 ): SubtitlePostProcessor {
   const model = options.model ?? DEFAULT_POSTPROCESSOR_MODEL;
-  const pipelineOptions: TextGenerationPipelineOptions = { device: "wasm", dtype: "q4" };
+  const pipelineOptions: TextGenerationPipelineOptions[] = [
+    { device: "wasm", dtype: "q4" },
+    { device: "wasm", dtype: "q8" },
+  ];
   let pipelinePromise: Promise<TextGenerationPipeline> | null = null;
   const getPipeline = () => {
     if (!pipelinePromise) {
-      pipelinePromise = (options.pipelineFactory
-        ? options.pipelineFactory("text-generation", model, pipelineOptions)
-        : loadDefaultPipeline("text-generation", model, pipelineOptions)
-      ).catch((error: unknown) => {
+      pipelinePromise = loadPipelineWithFallback({
+        model,
+        pipelineFactory: options.pipelineFactory,
+        pipelineOptions,
+      }).catch((error: unknown) => {
         pipelinePromise = null;
         throw error;
       });
@@ -77,6 +81,39 @@ export function createHuggingFaceSubtitlePostProcessor(
       return extractSubtitleCorrectionResult(readGeneratedText(output));
     },
   };
+}
+
+async function loadPipelineWithFallback({
+  model,
+  pipelineFactory,
+  pipelineOptions,
+}: {
+  model: string;
+  pipelineFactory?: PipelineFactory;
+  pipelineOptions: TextGenerationPipelineOptions[];
+}): Promise<TextGenerationPipeline> {
+  for (const [index, options] of pipelineOptions.entries()) {
+    try {
+      return pipelineFactory
+        ? await pipelineFactory("text-generation", model, options)
+        : await loadDefaultPipeline("text-generation", model, options);
+    } catch (error) {
+      const hasNextOption = index < pipelineOptions.length - 1;
+      if (!hasNextOption || !isQuantizedWeightCompatibilityError(error)) {
+        throw error;
+      }
+    }
+  }
+  throw new Error("本地字幕 LLM 模型加载失败");
+}
+
+function isQuantizedWeightCompatibilityError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("TransposeDQWeightsForMatMulNBits") ||
+    message.includes("MatMulNBits") ||
+    message.includes("Missing required scale")
+  );
 }
 
 function estimateMaxNewTokens(track: SubtitleTrack): number {
