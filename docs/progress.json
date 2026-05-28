@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-28T01:38:08Z",
+  "updatedAt": "2026-05-28T01:38:32Z",
   "students": {
     "ceilf6": {
       "activeIssue": 98,
@@ -116,6 +116,16 @@
       "reviewScore": 0,
       "penaltyScore": 0,
       "totalScore": 2.25
+    },
+    "lwayne7": {
+      "activeIssue": 97,
+      "completedIssues": [],
+      "reviewedIssues": [],
+      "bugPenalties": [],
+      "developmentScore": 0,
+      "reviewScore": 0,
+      "penaltyScore": 0,
+      "totalScore": 0
     }
   },
   "issues": {
@@ -432,6 +442,20 @@
       "status": "claimed",
       "assignee": "yangchloeeeee",
       "claimedAt": "2026-05-28T01:38:08Z",
+      "closedAt": null,
+      "mergedPr": null
+    },
+    "97": {
+      "number": 97,
+      "title": "[P1] 云端录制包预算校验与缺媒体降级",
+      "score": 2,
+      "stack": [
+        "typescript",
+        "node"
+      ],
+      "status": "claimed",
+      "assignee": "lwayne7",
+      "claimedAt": "2026-05-28T01:38:32Z",
       "closedAt": null,
       "mergedPr": null
     },
