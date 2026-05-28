@@ -41,6 +41,22 @@ test('validates subtitle distillation examples for correction and chapter genera
   assert.deepEqual(validateSubtitleTeacherResult(teacherResult, seedExample), teacherResult);
 });
 
+test('accepts sparse teacher subtitle corrections for unchanged segments', () => {
+  assert.deepEqual(
+    validateSubtitleTeacherResult(
+      {
+        segments: [{ id: 'subtitle-2', text: '然后 setCount 触发 render' }],
+        chapters: teacherResult.chapters,
+      },
+      seedExample,
+    ),
+    {
+      segments: [{ id: 'subtitle-2', text: '然后 setCount 触发 render' }],
+      chapters: teacherResult.chapters,
+    },
+  );
+});
+
 test('rejects distillation samples that omit chapters', () => {
   assert.throws(
     () => validateSubtitleTeacherResult({ segments: teacherResult.segments }, seedExample),
@@ -152,7 +168,7 @@ test('rejects overlapping or unsorted generated chapters', () => {
   );
 });
 
-test('rejects unknown or missing subtitle segment ids in teacher output', () => {
+test('rejects unknown or duplicate subtitle segment ids in teacher output', () => {
   assert.throws(
     () =>
       validateSubtitleTeacherResult(
@@ -162,7 +178,21 @@ test('rejects unknown or missing subtitle segment ids in teacher output', () => 
         },
         seedExample,
       ),
-    /every input segment exactly once/,
+    /unknown segment/,
+  );
+  assert.throws(
+    () =>
+      validateSubtitleTeacherResult(
+        {
+          segments: [
+            { id: 'subtitle-1', text: 'first correction' },
+            { id: 'subtitle-1', text: 'second correction' },
+          ],
+          chapters: teacherResult.chapters,
+        },
+        seedExample,
+      ),
+    /repeats segment/,
   );
 });
 
@@ -235,6 +265,62 @@ test('LoRA training parser does not trust remote code unless explicitly requeste
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), 'False,True');
+});
+
+test('LoRA training defaults to the browser-targeted SmolLM2 base model', () => {
+  const python = [
+    'import importlib.util',
+    'spec = importlib.util.spec_from_file_location("train_lora", "ml/subtitle-postprocessor/train_lora.py")',
+    'module = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(module)',
+    'parser = module.build_parser()',
+    'args = parser.parse_args(["--train-jsonl", "train.jsonl"])',
+    'print(args.base_model)',
+  ].join('; ');
+  const result = spawnSync('python3', ['-c', python], {
+    cwd: new URL('../..', import.meta.url),
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'HuggingFaceTB/SmolLM2-135M-Instruct');
+});
+
+test('LoRA training masks loss to assistant JSON tokens', () => {
+  const python = [
+    'import importlib.util',
+    'spec = importlib.util.spec_from_file_location("train_lora", "ml/subtitle-postprocessor/train_lora.py")',
+    'module = importlib.util.module_from_spec(spec)',
+    'spec.loader.exec_module(module)',
+    'print("{% generation %}" in module.ASSISTANT_MASK_CHAT_TEMPLATE)',
+  ].join('; ');
+  const result = spawnSync('python3', ['-c', python], {
+    cwd: new URL('../..', import.meta.url),
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'True');
+});
+
+test('evaluates subtitle SFT records for JSON, chapter, simplified Chinese, and glossary quality', () => {
+  const result = spawnSync(
+    'node',
+    ['scripts/subtitle-llm/evaluate-corpus.mjs', 'scripts/tests/fixtures/valid-subtitle-train.jsonl'],
+    {
+      cwd: new URL('../..', import.meta.url),
+      encoding: 'utf8',
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const metrics = JSON.parse(result.stdout);
+  assert.equal(metrics.records, 1);
+  assert.equal(metrics.invalidRecords, 0);
+  assert.equal(metrics.jsonValidRate, 1);
+  assert.equal(metrics.chapterSignalRate, 1);
+  assert.equal(metrics.simplifiedChineseRate, 1);
+  assert.equal(metrics.glossaryPreservationRate, 1);
 });
 
 test('LoRA training script rejects remote code trust with hub publishing', () => {
@@ -346,6 +432,53 @@ test('LoRA training JSONL validator accepts a complete subtitle SFT contract', (
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), 'ok');
+});
+
+test('LoRA training JSONL validator accepts sparse subtitle corrections', () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'subtitle-sparse-train-'));
+  const fixturePath = join(tempDir, 'sparse-train.jsonl');
+  const record = {
+    messages: [
+      { role: 'system', content: 'sys' },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          segments: [
+            { id: 'subtitle-1', startMs: 0, endMs: 1200, text: '原始字幕' },
+            { id: 'subtitle-2', startMs: 1200, endMs: 2600, text: '继续讲 use state' },
+          ],
+        }),
+      },
+      {
+        role: 'assistant',
+        content: JSON.stringify({
+          segments: [{ id: 'subtitle-2', text: '继续讲 useState' }],
+          chapters: [{ title: '状态设计', startMs: 0, endMs: 2600 }],
+        }),
+      },
+    ],
+  };
+
+  try {
+    writeFileSync(fixturePath, `${JSON.stringify(record)}\n`);
+    const python = [
+      'import importlib.util',
+      'spec = importlib.util.spec_from_file_location("train_lora", "ml/subtitle-postprocessor/train_lora.py")',
+      'module = importlib.util.module_from_spec(spec)',
+      'spec.loader.exec_module(module)',
+      `module.validate_train_jsonl(${JSON.stringify(fixturePath)})`,
+      'print("ok")',
+    ].join('; ');
+    const result = spawnSync('python3', ['-c', python], {
+      cwd: new URL('../..', import.meta.url),
+      encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), 'ok');
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('dataset validator rejects empty JSONL input', () => {

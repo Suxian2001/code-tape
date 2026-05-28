@@ -103,7 +103,7 @@ describe("normalizeTranscriptionResult", () => {
     ).resolves.toEqual({
       model: "onnx-community/whisper-tiny",
       source: "huggingface-local",
-      language: undefined,
+      language: "zh",
       segments: [],
     });
     expect(pipelineFactory).toHaveBeenCalledTimes(2);
@@ -134,7 +134,7 @@ describe("normalizeTranscriptionResult", () => {
     );
   });
 
-  it("transcribes without forcing a single ASR language so mixed Chinese and English survives", async () => {
+  it("forces Whisper to transcribe Chinese when generating subtitles", async () => {
     Object.defineProperty(URL, "createObjectURL", {
       configurable: true,
       value: vi.fn(() => "blob:subtitle-source"),
@@ -155,11 +155,7 @@ describe("normalizeTranscriptionResult", () => {
 
     expect(pipeline).toHaveBeenCalledWith(
       "blob:subtitle-source",
-      expect.not.objectContaining({ language: expect.any(String) }),
-    );
-    expect(pipeline).toHaveBeenCalledWith(
-      "blob:subtitle-source",
-      expect.objectContaining({ task: "transcribe" }),
+      expect.objectContaining({ language: "chinese", task: "transcribe" }),
     );
   });
 
@@ -199,7 +195,7 @@ describe("normalizeTranscriptionResult", () => {
     ).resolves.toEqual({
       model: "onnx-community/whisper-tiny",
       source: "huggingface-local",
-      language: undefined,
+      language: "zh",
       segments: [],
     });
     expect(pipelineFactory).toHaveBeenCalledTimes(2);
