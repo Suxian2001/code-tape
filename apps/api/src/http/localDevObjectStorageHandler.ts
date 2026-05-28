@@ -66,31 +66,50 @@ async function handleUpload(
   storage: LocalDevObjectStorage,
   uploadToken: string,
 ): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return corsPreflightResponse(request, "PUT, OPTIONS", "content-type");
+  }
   if (request.method !== "PUT") {
-    return methodNotAllowed("upload requires PUT method");
+    return withLocalDevCors(request, methodNotAllowed("upload requires PUT method"), "PUT, OPTIONS");
   }
 
   const target = storage.getPendingUploadTarget(uploadToken);
   if (!target) {
     if (storage.isConsumedUploadToken(uploadToken)) {
-      return objectStorageError("upload-session-conflict", "upload target already consumed");
+      return withLocalDevCors(
+        request,
+        objectStorageError("upload-session-conflict", "upload target already consumed"),
+        "PUT, OPTIONS",
+      );
     }
-    return objectStorageError("not-found", "upload target not found");
+    return withLocalDevCors(
+      request,
+      objectStorageError("not-found", "upload target not found"),
+      "PUT, OPTIONS",
+    );
   }
 
   const contentType = request.headers.get("content-type");
   if (!contentType || !mimeTypesMatch(contentType, target.mimeType)) {
-    return objectStorageError(
-      "media-type-not-supported",
-      `content-type must be ${target.mimeType}`,
+    return withLocalDevCors(
+      request,
+      objectStorageError(
+        "media-type-not-supported",
+        `content-type must be ${target.mimeType}`,
+      ),
+      "PUT, OPTIONS",
     );
   }
 
   const body = new Uint8Array(await request.arrayBuffer());
   if (body.byteLength > target.maxSizeBytes) {
-    return objectStorageError(
-      "quota-exceeded",
-      `upload exceeds max size of ${target.maxSizeBytes} bytes`,
+    return withLocalDevCors(
+      request,
+      objectStorageError(
+        "quota-exceeded",
+        `upload exceeds max size of ${target.maxSizeBytes} bytes`,
+      ),
+      "PUT, OPTIONS",
     );
   }
 
@@ -100,7 +119,7 @@ async function handleUpload(
     contentType: target.mimeType,
   });
   storage.markUploadTokenConsumed(uploadToken);
-  return new Response(null, { status: 204 });
+  return withLocalDevCors(request, new Response(null, { status: 204 }), "PUT, OPTIONS");
 }
 
 async function handleDownload(
@@ -108,26 +127,41 @@ async function handleDownload(
   storage: LocalDevObjectStorage,
   objectKeyEncoded: string,
 ): Promise<Response> {
+  if (request.method === "OPTIONS") {
+    return corsPreflightResponse(request, "GET, OPTIONS");
+  }
   if (request.method !== "GET") {
-    return methodNotAllowed("download requires GET method");
+    return withLocalDevCors(request, methodNotAllowed("download requires GET method"), "GET, OPTIONS");
   }
   const objectKey = decodeObjectKey(objectKeyEncoded);
   if (!objectKey) {
-    return objectStorageError("bad-request", "invalid object key encoding");
+    return withLocalDevCors(
+      request,
+      objectStorageError("bad-request", "invalid object key encoding"),
+      "GET, OPTIONS",
+    );
   }
 
   const stored = await storage.getObject(objectKey);
   if (!stored) {
-    return objectStorageError("not-found", "object not found");
+    return withLocalDevCors(
+      request,
+      objectStorageError("not-found", "object not found"),
+      "GET, OPTIONS",
+    );
   }
 
-  return new Response(toArrayBuffer(stored.body), {
-    status: 200,
-    headers: {
-      "content-type": stored.contentType,
-      "content-length": String(stored.sizeBytes),
-    },
-  });
+  return withLocalDevCors(
+    request,
+    new Response(toArrayBuffer(stored.body), {
+      status: 200,
+      headers: {
+        "content-type": stored.contentType,
+        "content-length": String(stored.sizeBytes),
+      },
+    }),
+    "GET, OPTIONS",
+  );
 }
 
 function mimeTypesMatch(actual: string, expected: string): boolean {
@@ -164,4 +198,48 @@ function escapeRegExp(value: string): string {
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+function corsPreflightResponse(
+  request: Request,
+  allowedMethods: string,
+  allowedHeaders?: string,
+): Response {
+  const headers = new Headers(buildCorsOriginHeaders(request));
+  headers.set("access-control-allow-methods", allowedMethods);
+  const requestedHeaders = request.headers.get("access-control-request-headers");
+  if (allowedHeaders) {
+    headers.set("access-control-allow-headers", allowedHeaders);
+  } else if (requestedHeaders) {
+    headers.set("access-control-allow-headers", requestedHeaders);
+  }
+  return new Response(null, { status: 204, headers });
+}
+
+function withLocalDevCors(
+  request: Request,
+  response: Response,
+  allowedMethods: string,
+): Response {
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(buildCorsOriginHeaders(request))) {
+    headers.set(key, value);
+  }
+  headers.set("access-control-allow-methods", allowedMethods);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function buildCorsOriginHeaders(request: Request): Record<string, string> {
+  const origin = request.headers.get("origin");
+  if (origin) {
+    return {
+      "access-control-allow-origin": origin,
+      vary: "Origin",
+    };
+  }
+  return { "access-control-allow-origin": "*" };
 }

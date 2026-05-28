@@ -188,3 +188,90 @@ test("handler returns null for unrelated routes", async () => {
   const response = await handler(new Request("http://localhost/api/recordings/upload-sessions"));
   assert.equal(response, null);
 });
+
+test("OPTIONS preflight on upload URL allows cross-origin PUT with content-type", async () => {
+  const storage = createLocalDevObjectStorage({ publicBaseUrl: PUBLIC_BASE_URL });
+  const handler = createLocalDevObjectStorageHandler(storage);
+  const target = storage.createUploadTarget({
+    kind: "manifest",
+    objectKey: "recordings/rec-1/package/manifest.json",
+    mimeType: "application/json",
+    maxSizeBytes: 32,
+  });
+  const webOrigin = "http://localhost:5173";
+
+  const preflight = await handler(
+    new Request(target.url, {
+      method: "OPTIONS",
+      headers: {
+        origin: webOrigin,
+        "access-control-request-method": "PUT",
+        "access-control-request-headers": "content-type",
+      },
+    }),
+  );
+  assert.ok(preflight);
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get("access-control-allow-origin"), webOrigin);
+  assert.match(preflight.headers.get("access-control-allow-methods") ?? "", /PUT/u);
+  assert.equal(preflight.headers.get("access-control-allow-headers"), "content-type");
+
+  const body = new TextEncoder().encode("{}");
+  const putResponse = await handler(
+    new Request(target.url, {
+      method: "PUT",
+      headers: { ...target.headers, origin: webOrigin },
+      body,
+    }),
+  );
+  assert.ok(putResponse);
+  assert.equal(putResponse.status, 204);
+  assert.equal(putResponse.headers.get("access-control-allow-origin"), webOrigin);
+});
+
+test("GET download includes CORS headers for cross-origin reads", async () => {
+  const storage = createLocalDevObjectStorage({ publicBaseUrl: PUBLIC_BASE_URL });
+  const handler = createLocalDevObjectStorageHandler(storage);
+  const objectKey = "recordings/rec-1/package/manifest.json";
+  const body = new TextEncoder().encode('{"ok":true}');
+  const target = storage.createUploadTarget({
+    kind: "manifest",
+    objectKey,
+    mimeType: "application/json",
+    maxSizeBytes: body.byteLength,
+  });
+  await handler(
+    new Request(target.url, {
+      method: "PUT",
+      headers: target.headers,
+      body,
+    }),
+  );
+
+  const webOrigin = "http://localhost:5173";
+  const preflight = await handler(
+    new Request(buildLocalDevObjectUrl(PUBLIC_BASE_URL, objectKey), {
+      method: "OPTIONS",
+      headers: {
+        origin: webOrigin,
+        "access-control-request-method": "GET",
+      },
+    }),
+  );
+  assert.ok(preflight);
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get("access-control-allow-origin"), webOrigin);
+  assert.match(preflight.headers.get("access-control-allow-methods") ?? "", /GET/u);
+
+  const getResponse = await handler(
+    new Request(buildLocalDevObjectUrl(PUBLIC_BASE_URL, objectKey), {
+      method: "GET",
+      headers: { origin: webOrigin },
+    }),
+  );
+  assert.ok(getResponse);
+  assert.equal(getResponse.status, 200);
+  assert.equal(getResponse.headers.get("access-control-allow-origin"), webOrigin);
+  assert.equal(getResponse.headers.get("content-type"), "application/json");
+  assert.equal(getResponse.headers.get("content-length"), String(body.byteLength));
+});
