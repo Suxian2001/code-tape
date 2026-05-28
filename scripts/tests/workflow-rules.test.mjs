@@ -547,6 +547,9 @@ test('technical plan owns P1 plus AI subtitle architecture and HF token boundary
   assert.match(technicalPlan, /默认输出简体中文/u);
   assert.match(technicalPlan, /允许同一字幕轨自然混合中英文本/u);
   assert.match(technicalPlan, /有音频媒体时可以预热本地 LLM/u);
+  assert.match(technicalPlan, /浏览器运行时优先尝试 q4/u);
+  assert.match(technicalPlan, /自动回退到 q8 重新加载/u);
+  assert.match(technicalPlan, /`TransposeDQWeightsForMatMulNBits`/u);
   assert.match(technicalPlan, /前端领域术语、组件名、变量名、函数名/u);
   assert.match(technicalPlan, /章节跳转点/u);
   assert.match(technicalPlan, /点击章节调用现有播放器 `seek\(startMs\)`/u);

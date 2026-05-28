@@ -83,6 +83,39 @@ describe("createHuggingFaceSubtitlePostProcessor", () => {
     });
   });
 
+  it("falls back to q8 when the q4 WASM model has incompatible fused quantized weights", async () => {
+    const pipeline = vi.fn(async (_prompt: string, _options: unknown) => [
+      {
+        generated_text:
+          '{"segments":[{"id":"subtitle-1","text":"useState hook"},{"id":"subtitle-2","text":"render result"}],"chapters":[{"title":"状态设计","startMs":0,"endMs":3000}]}',
+      },
+    ]);
+    const incompatibleQ4Error = new Error(
+      "Can't create a session. ERROR_CODE: 1, ERROR_MESSAGE: qdq_actions.cc:137 TransposeDQWeightsForMatMulNBits Missing required scale: model.decoder.embed_tokens.weight_merged_0_scale",
+    );
+    const pipelineFactory = vi
+      .fn()
+      .mockRejectedValueOnce(incompatibleQ4Error)
+      .mockResolvedValueOnce(pipeline);
+    const postProcessor = createHuggingFaceSubtitlePostProcessor({ pipelineFactory });
+
+    const result = await postProcessor.process({ track: makeTrack() });
+
+    expect(pipelineFactory).toHaveBeenNthCalledWith(
+      1,
+      "text-generation",
+      "onnx-community/SmolLM2-135M-Instruct-ONNX-MHA",
+      { device: "wasm", dtype: "q4" },
+    );
+    expect(pipelineFactory).toHaveBeenNthCalledWith(
+      2,
+      "text-generation",
+      "onnx-community/SmolLM2-135M-Instruct-ONNX-MHA",
+      { device: "wasm", dtype: "q8" },
+    );
+    expect(result.chapters).toEqual([{ title: "状态设计", startMs: 0, endMs: 3_000 }]);
+  });
+
   it("uses a larger output budget for 100 subtitle segments", async () => {
     const track = makeTrackWithSegments(100);
     const pipeline = vi.fn(
