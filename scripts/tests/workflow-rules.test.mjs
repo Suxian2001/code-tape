@@ -538,7 +538,21 @@ test('technical plan owns P1 plus AI subtitle architecture and HF token boundary
   assert.match(technicalPlan, /同一录制媒体只触发一次 warm-up/u);
   assert.match(technicalPlan, /不得把 token 打包进浏览器 bundle/u);
   assert.match(technicalPlan, /通过用户本机 `HF_TOKEN` 或 `huggingface-cli login` 推送到 Hugging Face Hub/u);
+  assert.match(technicalPlan, /公开发布到 Hugging Face Hub/u);
+  assert.match(technicalPlan, /浏览器本地推理只拉取公开模型资产/u);
+  assert.match(technicalPlan, /不得携带 Hugging Face token/u);
+  assert.match(technicalPlan, /不替代 Whisper\/ASR/u);
+  assert.match(technicalPlan, /默认输出简体中文/u);
+  assert.match(technicalPlan, /允许同一字幕轨自然混合中英文本/u);
+  assert.match(technicalPlan, /前端领域术语、组件名、变量名、函数名/u);
+  assert.match(technicalPlan, /章节跳转点/u);
+  assert.match(technicalPlan, /点击章节调用现有播放器 `seek\(startMs\)`/u);
+  assert.match(technicalPlan, /`SubtitleChapterList`/u);
+  assert.match(technicalPlan, /chapters: Array/u);
+  assert.match(technicalPlan, /完整 P1\+ 模式的模型输出必须总是包含 `chapters` 数组/u);
   assert.match(technicalPlan, /JSON 解析失败[\s\S]*保留原始 ASR 字幕/u);
+  assert.match(technicalPlan, /如果只有章节非法而字幕纠错合法[\s\S]*不能污染字幕轨/u);
+  assert.match(technicalPlan, /PRD 中“本地 LLM 纠错”和“自动分段生成章节跳转点”必须同时出现在技术方案/u);
 });
 
 test('repository text does not reference the standalone cloud plan path', () => {
