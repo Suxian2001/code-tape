@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-05-28T01:42:23Z",
+  "updatedAt": "2026-05-28T01:54:23Z",
   "students": {
     "ceilf6": {
       "activeIssue": 98,
@@ -52,7 +52,7 @@
       "totalScore": 9
     },
     "Suxian2001": {
-      "activeIssue": null,
+      "activeIssue": 96,
       "completedIssues": [
         5,
         79
@@ -456,6 +456,20 @@
       "status": "claimed",
       "assignee": "yangchloeeeee",
       "claimedAt": "2026-05-28T01:38:08Z",
+      "closedAt": null,
+      "mergedPr": null
+    },
+    "96": {
+      "number": 96,
+      "title": "[P1] 本地开发对象存储 HTTP 适配层",
+      "score": 2,
+      "stack": [
+        "typescript",
+        "node"
+      ],
+      "status": "claimed",
+      "assignee": "Suxian2001",
+      "claimedAt": "2026-05-28T01:54:23Z",
       "closedAt": null,
       "mergedPr": null
     },
