@@ -29,6 +29,9 @@ async function main() {
   const examples = parseJsonl(await readFile(seedPath, 'utf8'), seedPath).map((example) =>
     validateSubtitleDistillationExample(example),
   );
+  if (examples.length === 0) {
+    throw new Error('seed dataset must contain at least one distillation example');
+  }
   const records = [];
   for (const example of examples) {
     const teacherResult = await requestTeacherResult({

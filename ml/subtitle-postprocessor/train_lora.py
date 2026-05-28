@@ -7,6 +7,14 @@ import argparse
 import json
 import math
 import os
+import re
+
+
+SECRET_PATTERNS = (
+    re.compile(r"\bhf_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\bBearer\s+[A-Za-z0-9._-]{20,}\b"),
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,6 +49,7 @@ def validate_train_jsonl(path: str) -> None:
                 raise SystemExit(f"{path}:{line_number} is not valid JSON: {error}") from error
             if not isinstance(record, dict):
                 raise SystemExit(f"{path}:{line_number} must be a JSON object")
+            assert_no_secrets(record, f"{path}:{line_number}")
             validate_training_record(record, path, line_number)
             record_count += 1
     if record_count == 0:
@@ -67,6 +76,21 @@ def validate_training_record(record: dict, path: str, line_number: int) -> None:
     assistant_payload = parse_json_object(messages[2]["content"], path, line_number, "assistant content")
     segments = validate_user_segments(user_payload, path, line_number)
     validate_assistant_payload(assistant_payload, segments, path, line_number)
+
+
+def assert_no_secrets(value: object, location: str) -> None:
+    if isinstance(value, str):
+        for pattern in SECRET_PATTERNS:
+            if pattern.search(value):
+                raise SystemExit(f"secret-like value found at {location}")
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            assert_no_secrets(item, f"{location}[{index}]")
+        return
+    if isinstance(value, dict):
+        for key, child in value.items():
+            assert_no_secrets(child, f"{location}.{key}")
 
 
 def parse_json_object(text: str, path: str, line_number: int, label: str) -> dict:

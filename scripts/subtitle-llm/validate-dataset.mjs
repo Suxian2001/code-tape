@@ -23,6 +23,7 @@ async function main() {
       total += 1;
     }
   }
+  if (total === 0) throw new Error('dataset must contain at least one subtitle fine-tuning record');
   console.log(`Validated ${total} subtitle fine-tuning records`);
 }
 

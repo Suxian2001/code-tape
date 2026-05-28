@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -292,6 +295,41 @@ test('LoRA training script rejects subtitle records with empty chapters', () => 
   assert.match(result.stderr, /chapters must contain at least one chapter/);
 });
 
+test('LoRA training script rejects secret-like training records before loading ML dependencies', () => {
+  const fakeHfToken = `${'h'}${'f'}_${'d'.repeat(30)}`;
+  const tempDir = mkdtempSync(join(tmpdir(), 'subtitle-secret-train-'));
+  const fixturePath = join(tempDir, 'secret-train.jsonl');
+  const record = {
+    messages: [
+      { role: 'system', content: 'sys' },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          context: { runtimeOutput: `never train ${fakeHfToken}` },
+          segments: [{ id: 'subtitle-1', startMs: 0, endMs: 1200, text: '原始字幕' }],
+        }),
+      },
+      {
+        role: 'assistant',
+        content: JSON.stringify({
+          segments: [{ id: 'subtitle-1', text: '原始字幕' }],
+          chapters: [{ title: '状态设计', startMs: 0, endMs: 1200 }],
+        }),
+      },
+    ],
+  };
+
+  try {
+    writeFileSync(fixturePath, `${JSON.stringify(record)}\n`);
+    const result = runTrainingValidation(fixturePath);
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /secret-like value/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('LoRA training JSONL validator accepts a complete subtitle SFT contract', () => {
   const python = [
     'import importlib.util',
@@ -308,6 +346,49 @@ test('LoRA training JSONL validator accepts a complete subtitle SFT contract', (
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), 'ok');
+});
+
+test('dataset validator rejects empty JSONL input', () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'subtitle-empty-dataset-'));
+  const fixturePath = join(tempDir, 'empty.jsonl');
+
+  try {
+    writeFileSync(fixturePath, '');
+    const result = spawnSync('node', ['scripts/subtitle-llm/validate-dataset.mjs', fixturePath], {
+      cwd: new URL('../..', import.meta.url),
+      encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /must contain at least one subtitle fine-tuning record/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('distillation CLI rejects empty seed JSONL without writing output', () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'subtitle-empty-distill-'));
+  const seedPath = join(tempDir, 'empty-seed.jsonl');
+  const outPath = join(tempDir, 'distilled.jsonl');
+
+  try {
+    writeFileSync(seedPath, '');
+    const result = spawnSync(
+      'node',
+      ['scripts/subtitle-llm/distill-corpus.mjs', '--seed', seedPath, '--out', outPath],
+      {
+        cwd: new URL('../..', import.meta.url),
+        encoding: 'utf8',
+        env: { ...process.env, TEACHER_API_KEY: 'test-teacher-key' },
+      },
+    );
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /seed dataset must contain at least one distillation example/);
+    assert.equal(existsSync(outPath), false);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 function runTrainingValidation(fixturePath) {
